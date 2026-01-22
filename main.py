@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 import os
 from dotenv import load_dotenv
+from src.voicevox_client import VoicevoxClient
 
 # インテントの設定
 intents = discord.Intents.default()
@@ -20,6 +21,7 @@ class SumireVox(commands.Bot):
             intents=intents,
             help_command=None
         )
+        self.vv_client = VoicevoxClient()
 
     async def setup_hook(self) -> None:
         print("--- Loading Cogs ---")
@@ -30,6 +32,12 @@ class SumireVox(commands.Bot):
             except Exception as e:
                 print(f"❌ Failed to load {cog}: {e}")
         print("--------------------")
+
+    async def close(self) -> None:
+        print("--- Closing Bot ---")
+        await self.vv_client.close()
+        print("✅ VOICEVOX session closed.")
+        await super().close()
 
     async def on_ready(self) -> None:
         print(f"Logged in as {self.user} (ID: {self.user.id})")
