@@ -26,36 +26,31 @@ class Voice(commands.Cog):
     async def play_next(self, guild_id: int):
         self.is_processing[guild_id] = True
         queue = self.get_queue(guild_id)
-
-        # guildオブジェクトを確実に取得
         guild = self.bot.get_guild(guild_id) or await self.bot.fetch_guild(guild_id)
 
         try:
             while not queue.empty():
-                text = await queue.get()
-                file_path = f"{self.temp_dir}/audio_{guild_id}.wav"
+                text, author_id = await queue.get()  # タプルで取得
 
+                # DBからユーザー設定を読み込む
+                s = await self.bot.db.get_user_setting(author_id)
+
+                file_path = f"{self.temp_dir}/audio_{guild_id}.wav"
                 try:
                     await self.bot.vv_client.generate_sound(
                         text=text,
-                        speaker_id=1,
+                        speaker_id=s["speaker"],
+                        speed=s["speed"],
+                        pitch=s["pitch"],
                         output_path=file_path
                     )
-
-                    if guild.voice_client and guild.voice_client.is_connected():
+                    # ... (再生ロジックは以前と同じ) ...
+                    if guild.voice_client:
                         source = discord.FFmpegPCMAudio(file_path)
                         stop_event = asyncio.Event()
-
-                        def after_playing(error):
-                            if error:
-                                print(f"Playback error: {error}")
-                            self.bot.loop.call_soon_threadsafe(stop_event.set)
-
-                        guild.voice_client.play(source, after=after_playing)
+                        guild.voice_client.play(source,
+                                                after=lambda e: self.bot.loop.call_soon_threadsafe(stop_event.set))
                         await stop_event.wait()
-
-                except Exception as e:
-                    print(f"[{guild_id}] Playback Error: {e}")
                 finally:
                     queue.task_done()
         finally:
@@ -65,13 +60,12 @@ class Voice(commands.Cog):
     async def read_message(self, message: discord.Message):
         if message.author.bot or not message.guild or not message.guild.voice_client:
             return
-
-        # 追加: コマンドを打ったチャンネル以外は無視する設定
         if message.channel.id != self.read_channels.get(message.guild.id):
             return
 
         queue = self.get_queue(message.guild.id)
-        await queue.put(message.clean_content)
+        # テキストと「誰の発言か」をセットで入れる
+        await queue.put((message.clean_content, message.author.id))
 
         if not self.is_processing[message.guild.id]:
             asyncio.create_task(self.play_next(message.guild.id))
@@ -115,6 +109,26 @@ class Voice(commands.Cog):
             await interaction.response.send_message("👋 切断しました。")
         else:
             await interaction.response.send_message("❌ Botはボイスチャンネルに接続していません。", ephemeral=True)
+
+    @app_commands.command(name="set_voice", description="自分の声をカスタマイズします")
+    @app_commands.choices(speaker=[
+        app_commands.Choice(name="ずんだもん", value=3),
+        app_commands.Choice(name="四国めたん", value=2),
+        app_commands.Choice(name="春日部つむぎ", value=8),
+        app_commands.Choice(name="波音リツ", value=9),
+    ])
+    async def set_voice(self, interaction: discord.Interaction, speaker: int, speed: float = 1.0, pitch: float = 0.0):
+        # バリデーション
+        speed = max(0.5, min(2.0, speed))
+        pitch = max(-0.15, min(0.15, pitch))
+
+        # DBに保存
+        await self.bot.db.set_user_setting(interaction.user.id, speaker, speed, pitch)
+
+        await interaction.response.send_message(
+            f"✅ {interaction.user.display_name}さんの音声を保存しました！\n"
+            f"速度: {speed} / ピッチ: {pitch}", ephemeral=True
+        )
 
 
 async def setup(bot):
