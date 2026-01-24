@@ -45,7 +45,6 @@ class Voice(commands.Cog):
                         pitch=s["pitch"],
                         output_path=file_path
                     )
-                    # ... (再生ロジックは以前と同じ) ...
                     if guild.voice_client:
                         source = discord.FFmpegPCMAudio(file_path)
                         stop_event = asyncio.Event()
@@ -71,6 +70,11 @@ class Voice(commands.Cog):
 
         # URLを省略
         content = re.sub(r'https?://[\w/:%#$&?()~.=+\-]+', '、URL省略、', content)
+
+        # 長文対策
+        limit = 50 # 後々設定可能にする
+        if len(content) > limit:
+            content = content[:limit] + "、以下略"
 
         if not content.strip():
             return

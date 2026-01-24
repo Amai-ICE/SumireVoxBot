@@ -32,6 +32,6 @@ pip install discord.py python-dotenv aiohttp aiofiles asyncpg
 - [x] 読み上げピッチの変更
 - [x] URLの省略読み上げ
 - [x] コードブロックの省略読み上げ
-- [ ] 長文の省略読み上げ
+- [x] 長文の省略読み上げ
 - [ ] グローバル辞書
 - [ ] サーバーごとの辞書
