@@ -117,6 +117,12 @@ class Voice(commands.Cog):
         app_commands.Choice(name="春日部つむぎ", value=8),
         app_commands.Choice(name="波音リツ", value=9),
     ])
+    @app_commands.rename(speaker="キャラクター", speed="スピード", pitch="ピッチ")
+    @app_commands.describe(
+        speaker="自分の声のキャラクターを変更できます",
+        speed="自分の声のスピードを変更できます (デフォルトは1.0)",
+        pitch="自分の声のピッチを変更できます (デフォルトは0.0)"
+    )
     async def set_voice(self, interaction: discord.Interaction, speaker: int, speed: float = 1.0, pitch: float = 0.0):
         # バリデーション
         speed = max(0.5, min(2.0, speed))
