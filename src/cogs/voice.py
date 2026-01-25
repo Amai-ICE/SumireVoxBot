@@ -67,8 +67,10 @@ class Voice(commands.Cog):
 
         # 辞書適応
         words_dict = await self.bot.db.get_combined_dict(message.guild.id)
-        for word in sorted(words_dict.keys(), key=len, reverse=True):
-            content = content.replace(word, words_dict[word])
+        if words_dict:
+            for word in sorted(words_dict.keys(), key=len, reverse=True):
+                pattern = re.compile(re.escape(word), re.IGNORECASE)
+                content = pattern.sub(words_dict[word], content)
 
         # コードブロックを省略
         content = re.sub(r"```.*?```", "、コードブロック省略、", content, flags=re.DOTALL)
@@ -166,6 +168,8 @@ class Voice(commands.Cog):
         # グローバル登録はBot管理者のみ許可する例
         if is_global and not await self.bot.is_owner(interaction.user):
             return await interaction.response.send_message("❌ グローバル辞書への登録権限がありません。", ephemeral=True)
+
+        word = word.lower()
 
         if is_global:
             await self.bot.db.set_global_word(word, reading)
