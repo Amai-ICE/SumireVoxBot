@@ -1,5 +1,6 @@
 import os
 
+import jaconv
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, Form, Depends, HTTPException, status
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -35,8 +36,18 @@ async def index(request: Request):
     return templates.TemplateResponse("index.html", {"request": request, "user_dict": user_dict})
 
 @app.post("/add")
-async def add_word(word: str = Form(...), reading: str = Form(...)):
-    await vv_client.add_user_dict(word.lower(), reading)
+async def add_word(word: str = Form(...), reading: str = Form(...), username: str = Depends(authenticate)):
+    # 1. 単語（表記）は大文字小文字の揺れを防ぐため小文字化
+    normalized_word = word.lower()
+
+    # 2. 読みを全角カタカナに変換
+    # h2z: 半角を全角へ (カナ、数字、アルファベット)
+    # hira2kata: ひらがなをカタカナへ
+    normalized_reading = jaconv.h2z(reading, kana=True, digit=False, ascii=False)
+    normalized_reading = jaconv.hira2kata(normalized_reading)
+
+    # エンジン側に登録
+    await vv_client.add_user_dict(normalized_word, normalized_reading)
     return RedirectResponse(url="/", status_code=303)
 
 @app.post("/delete/{uuid}")

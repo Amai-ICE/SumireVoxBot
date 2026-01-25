@@ -5,3 +5,4 @@ aiofiles==25.1.0
 asyncpg==0.31.0
 fastapi
 uvicorn
+jaconv==0.4.1
