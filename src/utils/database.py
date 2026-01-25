@@ -23,15 +23,31 @@ class Database:
             await self.connect()
 
         async with self.pool.acquire() as conn:
-            await conn.execute('''
+            await conn.execute("""
                                CREATE TABLE IF NOT EXISTS user_settings
                                (
                                    user_id BIGINT PRIMARY KEY,
                                    speaker INTEGER DEFAULT 1,
-                                   speed REAL DEFAULT 1.0,
-                                   pitch REAL DEFAULT 0.0
+                                   speed   REAL    DEFAULT 1.0,
+                                   pitch   REAL    DEFAULT 0.0
                                )
-                               ''')
+                               """)
+            await conn.execute("""
+                               CREATE TABLE IF NOT EXISTS guild_dict
+                               (
+                                   guild_id BIGINT,
+                                   word     TEXT,
+                                   reading  TEXT,
+                                   PRIMARY KEY (guild_id, word)
+                               )
+                               """)
+            await conn.execute("""
+                               CREATE TABLE IF NOT EXISTS global_dict
+                               (
+                                   word    TEXT PRIMARY KEY,
+                                   reading TEXT
+                               )
+                               """)
 
     async def get_user_setting(self, user_id: int):
         """ユーザー設定の取得。なければデフォルト値を返す。"""
@@ -50,12 +66,42 @@ class Database:
         async with self.pool.acquire() as conn:
             await conn.execute('''
                                INSERT INTO user_settings (user_id, speaker, speed, pitch)
-                               VALUES ($1, $2, $3, $4) ON CONFLICT (user_id) DO
-                               UPDATE SET
-                                   speaker = EXCLUDED.speaker,
-                                   speed = EXCLUDED.speed,
-                                   pitch = EXCLUDED.pitch
+                               VALUES ($1, $2, $3, $4)
+                               ON CONFLICT (user_id) DO UPDATE SET speaker = EXCLUDED.speaker,
+                                                                   speed   = EXCLUDED.speed,
+                                                                   pitch   = EXCLUDED.pitch
                                ''', user_id, speaker, speed, pitch)
+
+    async def get_combined_dict(self, guild_id: int):
+        """グローバルとギルド専用を統合して取得。ギルド優先。"""
+        async with self.pool.acquire() as conn:
+            # グローバルを取得
+            global_rows = await conn.fetch("SELECT word, reading FROM global_dict")
+            # ギルド専用を取得
+            guild_rows = await conn.fetch("SELECT word, reading FROM guild_dict WHERE guild_id = $1", guild_id)
+
+            # 辞書にマッピング (先にグローバルを入れ、後からギルドで上書きすることで優先順位を実現)
+            combined = {row['word']: row['reading'] for row in global_rows}
+            for row in guild_rows:
+                combined[row['word']] = row['reading']
+
+            return combined
+
+    async def set_guild_word(self, guild_id: int, word: str, reading: str):
+        async with self.pool.acquire() as conn:
+            await conn.execute('''
+                               INSERT INTO guild_dict (guild_id, word, reading)
+                               VALUES ($1, $2, $3)
+                               ON CONFLICT (guild_id, word) DO UPDATE SET reading = EXCLUDED.reading
+                               ''', guild_id, word, reading)
+
+    async def set_global_word(self, word: str, reading: str):
+        async with self.pool.acquire() as conn:
+            await conn.execute('''
+                               INSERT INTO global_dict (word, reading)
+                               VALUES ($1, $2)
+                               ON CONFLICT (word) DO UPDATE SET reading = EXCLUDED.reading
+                               ''', word, reading)
 
     async def close(self):
         if self.pool:

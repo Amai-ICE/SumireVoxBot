@@ -65,6 +65,11 @@ class Voice(commands.Cog):
 
         content = message.clean_content
 
+        # 辞書適応
+        words_dict = await self.bot.db.get_combined_dict(message.guild.id)
+        for word in sorted(words_dict.keys(), key=len, reverse=True):
+            content = content.replace(word, words_dict[word])
+
         # コードブロックを省略
         content = re.sub(r"```.*?```", "、コードブロック省略、", content, flags=re.DOTALL)
 
@@ -154,6 +159,22 @@ class Voice(commands.Cog):
             f"✅ {interaction.user.display_name}さんの音声を保存しました！\n"
             f"速度: {speed} / ピッチ: {pitch}", ephemeral=True
         )
+
+    @app_commands.command(name="add_word", description="単語を辞書に登録します")
+    @app_commands.describe(word="登録する単語", reading="読み方", is_global="全サーバーで共有するか(管理者のみ)")
+    async def add_word(self, interaction: discord.Interaction, word: str, reading: str, is_global: bool = False):
+        # グローバル登録はBot管理者のみ許可する例
+        if is_global and not await self.bot.is_owner(interaction.user):
+            return await interaction.response.send_message("❌ グローバル辞書への登録権限がありません。", ephemeral=True)
+
+        if is_global:
+            await self.bot.db.set_global_word(word, reading)
+            msg = f"🌐 グローバル辞書に登録しました: `{word}` → `{reading}`"
+        else:
+            await self.bot.db.set_guild_word(interaction.guild.id, word, reading)
+            msg = f"🏠 このサーバーの辞書に登録しました: `{word}` → `{reading}`"
+
+        return await interaction.response.send_message(msg)
 
 
 async def setup(bot):
