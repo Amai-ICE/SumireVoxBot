@@ -42,6 +42,34 @@ class VoicevoxClient:
             await f.write(audio_data)
         return output_path
 
+    async def add_user_dict(self, surface: str, pronunciation: str, accent_type: int = 0):
+        """エンジン側のユーザー辞書に単語を登録する"""
+        session = await self._get_session()
+        params = {
+            "surface": surface,
+            "pronunciation": pronunciation,
+            "accent_type": accent_type
+        }
+        async with session.post(f"{self.base_url}/user_dict_word", params=params) as resp:
+            if resp.status != 200:
+                raise Exception(f"辞書登録失敗: {resp.status}")
+            return await resp.text() # 登録された単語のUUIDが返る
+
+    async def get_user_dict(self):
+        """エンジン側のユーザー辞書一覧を取得"""
+        session = await self._get_session()
+        async with session.get(f"{self.base_url}/user_dict") as resp:
+            # { "uuid": { "surface": "単語", "pronunciation": "ヨミ", ... }, ... }
+            return await resp.json()
+
+    async def delete_user_dict(self, uuid: str):
+        """エンジン側のユーザー辞書から特定のUUIDを削除"""
+        session = await self._get_session()
+        async with session.delete(f"{self.base_url}/user_dict_word/{uuid}") as resp:
+            if resp.status != 204:
+                raise Exception(f"辞書削除失敗: {resp.status}")
+            return True
+
     async def close(self):
         """Bot終了時などにセッションを安全に閉じるためのメソッド"""
         if self.session:

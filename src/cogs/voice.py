@@ -6,6 +6,11 @@ import asyncio
 import re
 
 
+def is_katakana(text: str) -> bool:
+    """全角カタカナ、長音記号のみで構成されているか判定"""
+    return re.fullmatch(r'^[ァ-ヶーヴ]+$', text) is not None
+
+
 # noinspection PyUnresolvedReferences
 class Voice(commands.Cog):
     def __init__(self, bot):
@@ -181,22 +186,28 @@ class Voice(commands.Cog):
         )
 
     @app_commands.command(name="add_word", description="単語を辞書に登録します")
-    @app_commands.describe(word="登録する単語", reading="読み方", is_global="全サーバーで共有するか(管理者のみ)")
+    @app_commands.describe(word="登録する単語", reading="読み方（カタカナのみ）", is_global="全サーバーで共有するか(管理者のみ)")
     async def add_word(self, interaction: discord.Interaction, word: str, reading: str, is_global: bool = False):
-        # グローバル登録はBot管理者のみ許可する例
-        if is_global and not await self.bot.is_owner(interaction.user):
-            return await interaction.response.send_message("❌ グローバル辞書への登録権限がありません。", ephemeral=True)
-
-        word = word.lower()
+        if not is_katakana(reading):
+            return await interaction.response.send_message(
+                "❌ 読み方は**全角カタカナ**だけで入力してください。（例：ディスコード）",
+                ephemeral=True
+            )
 
         if is_global:
-            await self.bot.db.set_global_word(word, reading)
-            msg = f"🌐 グローバル辞書に登録しました: `{word}` → `{reading}`"
-        else:
-            await self.bot.db.set_guild_word(interaction.guild.id, word, reading)
-            msg = f"🏠 このサーバーの辞書に登録しました: `{word}` → `{reading}`"
+            if not await self.bot.is_owner(interaction.user):
+                return await interaction.response.send_message("❌ 権限がありません。", ephemeral=True)
 
-        return await interaction.response.send_message(msg)
+            # エンジン側に登録
+            try:
+                await self.bot.vv_client.add_user_dict(surface=word, pronunciation=reading)
+                await interaction.response.send_message(f"🌐 エンジン辞書（共通）に登録しました: `{word}` → `{reading}`")
+            except Exception as e:
+                await interaction.response.send_message(f"❌ エラーが発生しました: {e}")
+        else:
+            # guild dict
+            await self.bot.db.set_guild_word(interaction.guild.id, word, reading)
+            await interaction.response.send_message(f"🏠 サーバー辞書に登録しました: `{word}` → `{reading}`")
 
     @app_commands.command(name="remove_word", description="辞書から単語を削除します")
     @app_commands.describe(word="削除する単語", is_global="管理者のみ: 全サーバー共通辞書から削除するか")
@@ -226,6 +237,45 @@ class Voice(commands.Cog):
         embed.add_field(name="🏠 サーバー辞書", value=format_rows(guild_rows), inline=False)
 
         await interaction.response.send_message(embed=embed)
+
+    @app_commands.command(name="list_global_dict", description="エンジン側の辞書（グローバル）を表示します")
+    async def list_global_dict(self, interaction: discord.Interaction):
+        if not await self.bot.is_owner(interaction.user):
+            return await interaction.response.send_message("❌ 権限がありません。", ephemeral=True)
+
+        user_dict = await self.bot.vv_client.get_user_dict()
+        if not user_dict:
+            return await interaction.response.send_message("🌐 グローバル辞書に登録はありません。")
+
+        text = "🌐 **グローバル辞書一覧 (VOICEVOX)**\n"
+        for uuid, data in user_dict.items():
+            text += f"・`{data['surface']}` → `{data['pronunciation']}` (ID: `{uuid[:8]}...`)\n"
+
+        # 文字数制限対策
+        if len(text) > 2000:
+            text = text[:1990] + "..."
+        await interaction.response.send_message(text)
+
+    @app_commands.command(name="remove_global_dict", description="エンジン側の辞書から単語を削除します")
+    @app_commands.describe(word="削除したい単語（表記）")
+    async def remove_global_dict(self, interaction: discord.Interaction, word: str):
+        if not await self.bot.is_owner(interaction.user):
+            return await interaction.response.send_message("❌ 権限がありません。", ephemeral=True)
+
+        user_dict = await self.bot.vv_client.get_user_dict()
+        # 指定された単語(surface)に一致するUUIDを探す
+        target_uuid = None
+        for uuid, data in user_dict.items():
+            if data['surface'] == word:
+                target_uuid = uuid
+                break
+
+        if target_uuid:
+            await self.bot.vv_client.delete_user_dict(target_uuid)
+            await interaction.response.send_message(f"🗑️ グローバル辞書から `{word}` を削除しました。")
+        else:
+            await interaction.response.send_message(f"❌ `{word}` はグローバル辞書に見つかりませんでした。",
+                                                    ephemeral=True)
 
 
 async def setup(bot):
