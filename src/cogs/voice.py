@@ -37,14 +37,15 @@ class Voice(commands.Cog):
 
         try:
             while not queue.empty():
-                text, author_id = await queue.get()  # タプルで取得
+                text, author_id = await queue.get()
 
                 # DBからユーザー設定を読み込む
                 s = await self.bot.db.get_user_setting(author_id)
 
                 file_path = f"{self.temp_dir}/audio_{guild_id}.wav"
                 try:
-                    normalized_text = text.lower()
+                    # kana, digit, ascii すべてを全角(h2z)にし、英字は小文字(lower)にする
+                    normalized_text = jaconv.h2z(text, kana=True, digit=True, ascii=True).lower()
 
                     await self.bot.vv_client.generate_sound(
                         text=normalized_text,
@@ -53,11 +54,14 @@ class Voice(commands.Cog):
                         pitch=s["pitch"],
                         output_path=file_path
                     )
+
                     if guild.voice_client:
                         source = discord.FFmpegPCMAudio(file_path)
                         stop_event = asyncio.Event()
-                        guild.voice_client.play(source,
-                                                after=lambda e: self.bot.loop.call_soon_threadsafe(stop_event.set))
+                        guild.voice_client.play(
+                            source,
+                            after=lambda e: self.bot.loop.call_soon_threadsafe(stop_event.set)
+                        )
                         await stop_event.wait()
                 finally:
                     queue.task_done()
