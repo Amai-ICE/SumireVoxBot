@@ -140,10 +140,26 @@ class Voice(commands.Cog):
 
     @app_commands.command(name="set_voice", description="自分の声をカスタマイズします")
     @app_commands.choices(speaker=[
-        app_commands.Choice(name="ずんだもん", value=3),
-        app_commands.Choice(name="四国めたん", value=2),
+        app_commands.Choice(name="四国めたん (あまあま)", value=0),
+        app_commands.Choice(name="ずんだもん (あまあま)", value=1),
         app_commands.Choice(name="春日部つむぎ", value=8),
+        app_commands.Choice(name="雨晴はう", value=10),
         app_commands.Choice(name="波音リツ", value=9),
+        app_commands.Choice(name="玄野武宏", value=11),
+        app_commands.Choice(name="白上虎太郎", value=12),
+        app_commands.Choice(name="青山龍星", value=13),
+        app_commands.Choice(name="冥鳴ひまり", value=14),
+        app_commands.Choice(name="九州そら (あまあま)", value=15),
+        app_commands.Choice(name="もち子さん", value=20),
+        app_commands.Choice(name="剣崎雌雄", value=21),
+        app_commands.Choice(name="後鬼", value=27),
+        app_commands.Choice(name="No.7", value=29),
+        app_commands.Choice(name="ちび式じい", value=42),
+        app_commands.Choice(name="櫻歌ミコ", value=43),
+        app_commands.Choice(name="小夜/SAYO", value=46),
+        app_commands.Choice(name="ナースロボ＿タイプＴ", value=47),
+        app_commands.Choice(name="聖騎士紅桜", value=50),
+        app_commands.Choice(name="雀松朱司", value=52),
     ])
     @app_commands.rename(speaker="キャラクター", speed="スピード", pitch="ピッチ")
     @app_commands.describe(
