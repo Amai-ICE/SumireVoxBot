@@ -4,9 +4,9 @@ import discord
 from discord.ext import commands
 import os
 from dotenv import load_dotenv
-from src.utils.voicevox_client import VoicevoxClient
-from src.utils.database import Database
-from src.web_admin import run_web_admin
+from src.core.voicevox_client import VoicevoxClient
+from src.core.database import Database
+from src.web.web_admin import run_web_admin
 
 # インテントの設定
 intents = discord.Intents.default()
