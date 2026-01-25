@@ -62,6 +62,8 @@ class Voice(commands.Cog):
             return
         if message.channel.id != self.read_channels.get(message.guild.id):
             return
+        if message.content.startswith(("!", "！")):
+            return
 
         content = message.clean_content
 
