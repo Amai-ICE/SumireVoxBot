@@ -22,7 +22,7 @@ discord.py と VOICEVOX エンジンを用いた読み上げBotです。
 3) Python パッケージをインストールする
 
 ```bash
-pip install discord.py python-dotenv aiohttp aiofiles asyncpg
+pip install -U discord.py python-dotenv aiohttp aiofiles asyncpg
 ```
 
 ## 機能
