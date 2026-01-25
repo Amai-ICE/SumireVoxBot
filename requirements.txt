@@ -9,3 +9,5 @@ PyNaCl==1.6.2
 python-dotenv==1.2.1
 python-multipart==0.0.22
 uvicorn==0.40.0
+rich==14.3.1
+loguru==0.7.3
