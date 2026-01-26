@@ -22,14 +22,14 @@ intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
 
-COMMAND_PREFIX = "!"
-SYNC_KEY = "s"
-QUIT_KEY = "q"
-DEFAULT_WEB_PORT = 8080
-DEFAULT_VOICEVOX_HOST = "127.0.0.1"
-DEFAULT_VOICEVOX_PORT = 50021
+COMMAND_PREFIX: str = "!"
+SYNC_KEY: str = "s"
+QUIT_KEY: str = "q"
+DEFAULT_WEB_PORT: int = 8080
+DEFAULT_VOICEVOX_HOST: str = "127.0.0.1"
+DEFAULT_VOICEVOX_PORT: int = 50021
 
-COGS = [
+COGS: list[str] = [
     "src.cogs.voice"
 ]
 
@@ -41,6 +41,7 @@ class SumireVox(commands.Bot):
             intents=intents,
             help_command=None
         )
+        self._ready_logged = None
         self.web_admin_task = None # type: asyncio.Task or None
         self.keystroke_task = None # type: asyncio.Task or None
         self.vv_client = VoicevoxClient()
@@ -115,6 +116,10 @@ class SumireVox(commands.Bot):
         logger.success("Discord セッションを終了しました")
 
     async def on_ready(self) -> None:
+        if hasattr(self, "_ready_logged"):
+            return
+        self._ready_logged = True
+
         web_port = os.getenv("WEB_ADMIN_PORT", DEFAULT_WEB_PORT)
         web_url = f"http://localhost:{web_port}"
 
