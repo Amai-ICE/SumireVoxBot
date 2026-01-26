@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 # ロガー関連のインポート
 from src.utils.logger import setup_logger, console
 from rich.table import Table
+from rich import box
 
 from src.core.voicevox_client import VoicevoxClient
 from src.core.database import Database
@@ -50,8 +51,6 @@ class SumireVox(commands.Bot):
             except Exception as e:
                 logger.error(f"Failed to load {cog}: {e}")
 
-        # スラッシュコマンドの同期も自動で行う場合はここに追加できます
-        await self.tree.sync()
         logger.info("スラッシュコマンドの同期が完了しました")
 
     async def close(self) -> None:
@@ -64,16 +63,31 @@ class SumireVox(commands.Bot):
         logger.success("Discord セッションを終了しました")
 
     async def on_ready(self) -> None:
-        # 起動時のステータスを Rich のテーブルで表示
-        table = Table(title="🌸 SumireVox システム稼働状況", show_header=True, header_style="bold magenta")
-        table.add_column("項目", style="cyan")
-        table.add_column("ステータス", style="green")
+        web_port = os.getenv("WEB_ADMIN_PORT", "8080")
+        web_url = f"http://localhost:{web_port}"
+
+        vv_host = os.getenv("VOICEVOX_HOST", "127.0.0.1")
+        vv_port = os.getenv("VOICEVOX_PORT", "50021")
+        vv_url = f"http://{vv_host}:{vv_port}"
+
+        # 起動時のステータスをテーブルで表示
+        table = Table(
+            title="🌸 SumireVox システム稼働状況",
+            show_header=True,
+            header_style="bold magenta",
+            box=box.SQUARE  # これで枠線のガタつきを防止します
+        )
+
+        table.add_column("項目", style="cyan", no_wrap=True)
+        table.add_column("ステータス / URL", style="white")
 
         table.add_row("ログインユーザー", f"{self.user} ({self.user.id})")
-        table.add_row("discord.py バージョン", discord.__version__)
-        table.add_row("接続サーバー数", str(len(self.guilds)))
-        table.add_row("Web管理画面", "http://localhost:8080 (Basic Auth 有効)")
-        table.add_row("VOICEVOX Engine", os.getenv("VOICEVOX_URL", "http://localhost:50021"))
+        table.add_row("接続サーバー数", f"{len(self.guilds)} guilds")
+
+        # 管理画面とエンジンの情報を表示
+        table.add_row("Web管理画面", f"[link={web_url}]{web_url}[/link] (User: {os.getenv('ADMIN_USER')})")
+        table.add_row("VOICEVOX Engine", f"[link={vv_url}]{vv_url}[/link]")
+        table.add_row("外部アクセス", "[yellow]無効 (Localhost Only)[/yellow]")
 
         console.print(table)
         logger.success("SumireVox は正常に起動し、待機中です。")
