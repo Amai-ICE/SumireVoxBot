@@ -22,7 +22,14 @@ intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
 
-cogs = [
+COMMAND_PREFIX = "!"
+SYNC_KEY = "s"
+QUIT_KEY = "q"
+DEFAULT_WEB_PORT = 8080
+DEFAULT_VOICEVOX_HOST = "127.0.0.1"
+DEFAULT_VOICEVOX_PORT = 50021
+
+COGS = [
     "src.cogs.voice"
 ]
 
@@ -30,10 +37,12 @@ cogs = [
 class SumireVox(commands.Bot):
     def __init__(self):
         super().__init__(
-            command_prefix="!",
+            command_prefix=COMMAND_PREFIX,
             intents=intents,
             help_command=None
         )
+        self.web_admin_task = None # type: asyncio.Task or None
+        self.keystroke_task = None # type: asyncio.Task or None
         self.vv_client = VoicevoxClient()
         self.db = Database()
         self.web_admin = WebAdminServer(self.vv_client)
@@ -42,36 +51,44 @@ class SumireVox(commands.Bot):
         logger.info("初期化シーケンスを開始します...")
 
         await self.db.init_db()
-        # Web管理画面のタスク開始
-        asyncio.create_task(self.web_admin.run())
+        self.web_admin_task = asyncio.create_task(self.web_admin.run())
 
         logger.info("Cogs の読み込みを開始します")
-        for cog in cogs:
+        for cog in COGS:
             try:
                 await self.load_extension(cog)
-                logger.success(f"Loaded: {cog}")
+                logger.success(f"ロード: {cog}")
             except Exception as e:
-                logger.error(f"Failed to load {cog}: {e}")
+                logger.error(f"{cog} の読み込みに失敗しました: {e}")
 
-        asyncio.create_task(self.watch_keystroke())
-        logger.info("キーボード入力を監視中: 's' キー + Enter でコマンドを同期します")
+        self.keystroke_task = asyncio.create_task(self.watch_keystroke())
+        logger.info(
+            f"キーボード監視を開始します"
+            f"SYNC: {SYNC_KEY}, QUIT: {QUIT_KEY}"
+        )
 
     async def watch_keystroke(self):
         """ターミナルからの入力を監視するタスク"""
         while True:
-            # 入力を非同期で待機
-            line = await ainput()
-            if line.strip().lower() == 's':
-                logger.info("サーバー側からのリクエストにより同期を開始します...")
-                try:
-                    synced = await self.tree.sync()
-                    logger.success(f"{len(synced)} 個のコマンドを同期しました！")
-                except Exception as e:
-                    logger.error(f"同期エラー: {e}")
-            elif line.strip().lower() == 'q':
-                logger.warning("終了コマンドを受信しました。Botを停止します。")
-                await self.close()
+            try:
+                line = await ainput()
+                if line.strip().lower() == SYNC_KEY:
+                    logger.info("サーバー側からのリクエストにより同期を開始します...")
+                    try:
+                        synced = await self.tree.sync()
+                        logger.success(f"{len(synced)} 個のコマンドを同期しました！")
+                    except Exception as e:
+                        logger.error(f"同期エラー: {e}")
+                elif line.strip().lower() == QUIT_KEY:
+                    logger.warning("終了コマンドを受信しました。Botを停止します。")
+                    await self.close()
+                    break
+            except EOFError:
+                logger.info("入力ストリームが閉じられました")
                 break
+            except Exception as e:
+                logger.error(f"入力監視中にエラーが発生: {e}")
+                await asyncio.sleep(1)
 
     async def close(self) -> None:
         logger.warning("シャットダウンシーケンスを開始します...")
@@ -86,12 +103,14 @@ class SumireVox(commands.Bot):
         logger.success("Discord セッションを終了しました")
 
     async def on_ready(self) -> None:
-        web_port = os.getenv("WEB_ADMIN_PORT", "8080")
+        web_port = os.getenv("WEB_ADMIN_PORT", DEFAULT_WEB_PORT)
         web_url = f"http://localhost:{web_port}"
 
-        vv_host = os.getenv("VOICEVOX_HOST", "127.0.0.1")
-        vv_port = os.getenv("VOICEVOX_PORT", "50021")
+        vv_host = os.getenv("VOICEVOX_HOST", DEFAULT_VOICEVOX_HOST)
+        vv_port = os.getenv("VOICEVOX_PORT", DEFAULT_VOICEVOX_PORT)
         vv_url = f"http://{vv_host}:{vv_port}"
+
+        admin_user = os.getenv("ADMIN_USER", "Not Configured")
 
         # 起動時のステータスをテーブルで表示
         table = Table(
@@ -108,24 +127,12 @@ class SumireVox(commands.Bot):
         table.add_row("接続サーバー数", f"{len(self.guilds)} guilds")
 
         # 管理画面とエンジンの情報を表示
-        table.add_row("Web管理画面", f"[link={web_url}]{web_url}[/link] (User: {os.getenv('ADMIN_USER')})")
+        table.add_row("Web管理画面", f"[link={web_url}]{web_url}[/link] (User: {admin_user})")
         table.add_row("VOICEVOX Engine", f"[link={vv_url}]{vv_url}[/link]")
         table.add_row("外部アクセス", "[yellow]無効 (Localhost Only)[/yellow]")
 
         console.print(table)
         logger.success("SumireVox は正常に起動し、待機中です。")
-
-
-bot = SumireVox()
-
-
-@bot.command()
-@commands.is_owner()
-async def sync(ctx):
-    logger.info("手動同期リクエストを受信しました")
-    synced = await bot.tree.sync()
-    await ctx.send(f"Successfully synced {len(synced)} commands.")
-    logger.success(f"{len(synced)} 個のコマンドを同期しました")
 
 
 if __name__ == "__main__":
@@ -134,6 +141,7 @@ if __name__ == "__main__":
 
     if token:
         try:
+            bot = SumireVox()
             bot.run(token, log_handler=None)  # 標準のロガーを無効化して loguru に一本化
         except Exception as e:
             logger.critical(f"Botの実行中に致命的なエラーが発生しました: {e}")
