@@ -41,7 +41,6 @@ class SumireVox(commands.Bot):
             intents=intents,
             help_command=None
         )
-        self._ready_logged: bool | None = None
         self.web_admin_task: asyncio.Task | None = None
         self.keystroke_task: asyncio.Task | None = None
         self.vv_client: VoicevoxClient | None = VoicevoxClient()
@@ -51,8 +50,19 @@ class SumireVox(commands.Bot):
     async def setup_hook(self) -> None:
         logger.info("初期化シーケンスを開始します...")
 
-        await self.db.init_db()
-        self.web_admin_task = asyncio.create_task(self.web_admin.run())
+        try:
+            await self.db.init_db()
+            logger.success("データベースの初期化が完了しました")
+        except Exception as e:
+            logger.error(f"データベースの初期化に失敗しました: {e}")
+            raise
+
+        try:
+            self.web_admin_task = asyncio.create_task(self.web_admin.run())
+            logger.success("Web管理画面の起動タスクを作成しました")
+        except Exception as e:
+            logger.error(f"Web管理画面の起動に失敗しました: {e}")
+            raise
 
         logger.info("Cogs の読み込みを開始します")
         for cog in COGS:
@@ -118,7 +128,7 @@ class SumireVox(commands.Bot):
     async def on_ready(self) -> None:
         if hasattr(self, "_ready_logged"):
             return
-        self._ready_logged = True
+        _ready_logged = True
 
         web_port = os.getenv("WEB_ADMIN_PORT", DEFAULT_WEB_PORT)
         web_url = f"http://localhost:{web_port}"
@@ -134,7 +144,7 @@ class SumireVox(commands.Bot):
             title="🌸 SumireVox システム稼働状況",
             show_header=True,
             header_style="bold magenta",
-            box=box.SQUARE  # これで枠線のガタつきを防止します
+            box=box.SQUARE
         )
 
         table.add_column("項目", style="cyan", no_wrap=True)
