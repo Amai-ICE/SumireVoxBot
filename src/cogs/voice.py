@@ -6,6 +6,7 @@ import asyncio
 import re
 import jaconv
 from loguru import logger
+from src.core.models import GuildSettings
 
 
 def is_katakana(text: str) -> bool:
@@ -101,7 +102,10 @@ class Voice(commands.Cog):
         content = re.sub(r'https?://[\w/:%#$&?()~.=+\-]+', '、URL省略、', content)
 
         # 長文対策
-        limit = 50 # 後々設定可能にする
+        settings = await self.bot.db.get_guild_settings(message.guild.id)
+        limit: int = 50
+        if settings.max_chars:
+            limit = settings.max_chars
         if len(content) > limit:
             content = content[:limit] + "、以下略"
 
@@ -224,7 +228,8 @@ class Voice(commands.Cog):
 
         await self.bot.db.set_guild_word(interaction.guild.id, word, normalized_reading)
         logger.success(f"[{interaction.guild.id}] 辞書登録: {word} -> {normalized_reading}")
-        return await interaction.response.send_message(f"🏠 サーバー辞書に登録しました: `{word}` → `{normalized_reading}`")
+        return await interaction.response.send_message(
+            f"🏠 サーバー辞書に登録しました: `{word}` → `{normalized_reading}`")
 
     @app_commands.command(name="remove_word", description="辞書から単語を削除します")
     @app_commands.describe(word="削除する単語")
@@ -250,6 +255,59 @@ class Voice(commands.Cog):
 
         await interaction.response.send_message(embed=embed)
 
+    @app_commands.command(name="config", description="サーバーごとの読み上げ設定を変更します")
+    @app_commands.describe(
+        item="設定する項目を選んでください",
+        value="ONならTrue、OFFならFalse、または数値を入力してください"
+    )
+    @app_commands.choices(item=[
+        app_commands.Choice(name="自動接続 (True/False)", value="auto_join"),
+        app_commands.Choice(name="文字数制限 (10-500)", value="max_chars"),
+        app_commands.Choice(name="入退出の読み上げ (True/False)", value="read_vc_status"),
+        app_commands.Choice(name="メンション読み上げ (True/False)", value="read_mention"),
+        app_commands.Choice(name="さん付け (True/False)", value="add_suffix"),
+    ])
+    async def config(self, interaction: discord.Interaction, item: str, value: str):
+        # 1. 現在の設定を取得（なければデフォルト値が返る）
+        settings = await self.bot.db.get_guild_settings(interaction.guild.id)
+
+        logger.debug(f"サーバー設定の更新を行います...現在の設定: {settings}")
+
+        try:
+            # 現在の値を取得（表示用）
+            old_value = getattr(settings, item)
+
+            # 2. 値の型変換
+            if isinstance(old_value, bool):
+                # bool型の場合の変換
+                new_value = value.lower() in ("true", "yes", "on", "1", "有効", "きおん")
+            elif isinstance(old_value, int):
+                # int型の場合の変換
+                if not value.isdigit():
+                    return await interaction.response.send_message("❌ 数値を入力してください。", ephemeral=True)
+                new_value = int(value)
+            else:
+                new_value = value
+
+            # 3. 値の反映とバリデーション
+            # Pydanticモデルを更新（ここで ge=10 などの制約がチェックされる）
+            setattr(settings, item, new_value)
+
+            # 4. データベースへ保存（UPSERTなので新規でも更新でもOK）
+            await self.bot.db.set_guild_settings(interaction.guild.id, settings)
+
+            await interaction.response.send_message(
+                f"✅ 設定を更新しました：**{item}**\n"
+                f"値：`{old_value}` ➡ **`{new_value}`**"
+            )
+
+        except Exception as e:
+            # Pydanticのバリデーションエラーなどのハンドリング
+            logger.error(f"Config update failed: {e}")
+            await interaction.response.send_message(
+                f"❌ 設定の更新に失敗しました。正しい値を入力してください。\n(エラー内容: {e})",
+                ephemeral=True
+            )
 
 async def setup(bot):
     await bot.add_cog(Voice(bot))

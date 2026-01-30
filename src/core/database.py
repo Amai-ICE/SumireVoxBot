@@ -1,3 +1,5 @@
+import json
+
 import asyncpg
 import os
 from loguru import logger
@@ -32,27 +34,34 @@ class Database:
             await conn.execute(GuildSettingsQueries.CREATE_TABLE)
 
     async def get_guild_settings(self, guild_id: int) -> GuildSettings:
-        """サーバー設定を取得する。存在しない場合はデフォルト値を返す"""
-        row = await self.pool.fetchrow(
-            GuildSettingsQueries.GET_SETTINGS,
-            guild_id
-        )
+        """サーバー設定を取得する。型が文字列でも辞書でも対応できるようにする"""
+        row = await self.pool.fetchrow(GuildSettingsQueries.GET_SETTINGS, guild_id)
 
         if row:
-            # DBのJSONB(dict)をPydanticモデルに変換
-            # row['settings'] は asyncpg が自動で dict に変換してくれています
-            return GuildSettings.model_validate(row['settings'])
+            raw_data = row['settings']
 
-        # データがない場合はデフォルト設定のインスタンスを返す
+            # もしデータが文字列(str)で返ってきたら辞書に変換
+            if isinstance(raw_data, str):
+                try:
+                    raw_data = json.loads(raw_data)
+                except json.JSONDecodeError:
+                    logger.error(f"JSONのパースに失敗しました: {raw_data}")
+                    return GuildSettings()
+
+            # 辞書(dict)としてPydanticでバリデーション
+            return GuildSettings.model_validate(raw_data)
+
+        # データがない場合はデフォルト設定
         return GuildSettings()
 
     async def set_guild_settings(self, guild_id: int, settings: GuildSettings):
         """サーバー設定を保存する"""
         # Pydanticモデルを辞書に変換
         settings_dict = settings.model_dump()
+        settings_json = json.dumps(settings_dict)
 
         # INSERT ... ON CONFLICT (UPSERT) で保存
-        await self.pool.execute(GuildSettingsQueries.SET_SETTINGS, guild_id, settings_dict)
+        await self.pool.execute(GuildSettingsQueries.SET_SETTINGS, guild_id, settings_json)
 
         logger.debug(f"[{guild_id}] サーバー設定を更新しました。")
 
