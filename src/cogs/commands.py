@@ -16,7 +16,8 @@ class Commands(commands.Cog):
         return await interaction.response.send_message(f"Pong! {self.bot.latency * 1000:.2f}ms", ephemeral=True)
 
     @app_commands.command(
-        name="sync"
+        name="sync",
+        description="コマンドを同期します (開発者限定)"
     )
     @commands.is_owner()
     async def sync(self, interaction: discord.Interaction):
