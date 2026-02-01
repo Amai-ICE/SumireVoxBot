@@ -107,6 +107,7 @@ class Database:
         async with self.pool.acquire() as conn:
             await conn.execute(DictQueries.INSERT_DICT, guild_id, dict_json)
         logger.debug(f"[{guild_id}] 辞書を更新しました。")
+        return True
 
     async def close(self):
         if self.pool:
