@@ -6,7 +6,7 @@ import asyncio
 import re
 import jaconv
 from loguru import logger
-from src.core.models import GuildSettings
+import romkan2
 
 
 def is_katakana(text: str) -> bool:
@@ -100,6 +100,9 @@ class Voice(commands.Cog):
 
         # URLを省略
         content = re.sub(r'https?://[\w/:%#$&?()~.=+\-]+', '、URL省略、', content)
+
+        # ローマ字を仮名読みに変換
+        content = romkan2.to_hiragana(content)
 
         # 長文対策
         settings = await self.bot.db.get_guild_settings(message.guild.id)
