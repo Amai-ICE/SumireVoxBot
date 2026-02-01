@@ -20,3 +20,6 @@ class GuildSettings(BaseModel):
 
     # さん付け
     add_suffix: bool = Field(default=False, description="ユーザー名の後に『さん』を付ける")
+    
+    # ローマ字読み
+    read_romaji: bool = Field(default=False, description="ローマ字を読み上げるか")
