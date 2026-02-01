@@ -404,40 +404,33 @@ class Voice(commands.Cog):
 
     @app_commands.command(name="config", description="サーバーごとの読み上げ設定を変更します")
     async def config(self, interaction: discord.Interaction):
-        try:
-            settings = await self.bot.db.get_guild_settings(interaction.guild.id)
-        except Exception as e:
-            logger.error(f"[{interaction.guild.id}] サーバー設定の取得に失敗しました: {e}")
-            return await interaction.response.send_message("❌ サーバー設定の取得中にエラーが発生しました。",
-                                                           ephemeral=True)
+        settings = await self.bot.db.get_guild_settings(interaction.guild.id)
 
-        try:
-            embed = discord.Embed(
-                title="⚙️ サーバー設定",
-                description="現在の設定値は以下の通りです。変更するには下のメニューから項目を選択してください。",
-                color=discord.Color.blue()
-            )
+        embed = discord.Embed(title="⚙️ サーバー設定", color=discord.Color.blue())
 
-            embed.add_field(name="自動接続", value="✅ 有効" if settings.auto_join else "❌ 無効", inline=True)
-            embed.add_field(name="文字数制限", value=f"{settings.max_chars}文字", inline=True)
-            embed.add_field(name="入退出の読み上げ", value="✅ 有効" if settings.read_vc_status else "❌ 無効",
-                            inline=True)
-            embed.add_field(name="メンション読み上げ", value="✅ 有効" if settings.read_mention else "❌ 無効",
-                            inline=True)
-            embed.add_field(name="さん付け", value="✅ 有効" if settings.add_suffix else "❌ 無効", inline=True)
-            embed.add_field(name="ローマ字読み", value="✅ 有効" if settings.read_romaji else "❌ 無効", inline=True)
-            embed.add_field(name="添付ファイルの読み上げ", value="✅ 有効" if settings.read_attachments else "❌ 無効",
-                            inline=True)
-            embed.add_field(name="コードブロックの省略", value="✅ 有効" if settings.skip_code_blocks else "❌ 無効",
-                            inline=True)
-            embed.add_field(name="URLの省略", value="✅ 有効" if settings.skip_urls else "❌ 無効", inline=True)
+        # 共通設定の表示
+        common_settings = (
+            f"文字数制限: `{settings.max_chars}`\n"
+            f"さん付け: `{'ON' if settings.add_suffix else 'OFF'}` / ローマ字: `{'ON' if settings.read_romaji else 'OFF'}`\n"
+            f"メンション: `{'ON' if settings.read_mention else 'OFF'}` / 添付ファイル: `{'ON' if settings.read_attachments else 'OFF'}`\n"
+            f"コードブロック省略: `{'ON' if settings.skip_code_blocks else 'OFF'}` / URL省略: `{'ON' if settings.skip_urls else 'OFF'}`"
+        )
+        embed.add_field(name="基本設定", value=common_settings, inline=False)
 
-            view = ConfigSearchView(self.bot.db)
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
-        except Exception as e:
-            logger.error(f"[{interaction.guild.id}] 設定画面の表示に失敗しました: {e}")
-            await interaction.response.send_message("❌ 設定画面の表示中にエラーが発生しました。", ephemeral=True)
+        # 自動接続（このBotの設定）の表示
+        bot_key = str(self.bot.user.id)
+        auto_join_info = "❌ 設定なし"
+        if settings.auto_join and bot_key in settings.auto_join_config:
+            conf = settings.auto_join_config[bot_key]
+            vc = interaction.guild.get_channel(conf["voice"])
+            tc = interaction.guild.get_channel(conf["text"])
+            if vc and tc:
+                auto_join_info = f"✅ 有効\n監視VC: {vc.mention}\n出力TC: {tc.mention}"
 
+        embed.add_field(name=f"🤖 このBot({self.bot.user.name})の自動接続", value=auto_join_info, inline=False)
+
+        view = ConfigSearchView(self.bot.db, self.bot)
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(Voice(bot))
