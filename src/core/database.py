@@ -84,30 +84,29 @@ class Database:
     async def get_dict(self, guild_id: int):
         """特定のギルドの辞書を辞書形式で取得"""
         async with self.pool.acquire() as conn:
-            rows = await conn.fetch(DictQueries.GET_DICT, guild_id)
-            return {row['word']: row['reading'] for row in rows}
+            row = await conn.fetchrow(DictQueries.GET_DICT, guild_id)
+            if row:
+                raw_data = row['dict']
 
-    # ギルド辞書の登録
-    async def set_guild_word(self, guild_id: int, word: str, reading: str):
-        async with self.pool.acquire() as conn:
-            await conn.execute(DictQueries.INSERT_WORD, guild_id, word, reading)
+                # もしデータが文字列(str)で返ってきたら辞書に変換
+                if isinstance(raw_data, str):
+                    try:
+                        return json.loads(raw_data)
+                    except json.JSONDecodeError:
+                        logger.error(f"辞書のJSONパースに失敗しました: {raw_data}")
+                        return {}
 
-    # ギルド辞書の削除
-    async def remove_guild_word(self, guild_id: int, word: str):
-        async with self.pool.acquire() as conn:
-            result = await conn.execute(
-                DictQueries.REMOVE_WORD,
-                guild_id, word
-            )
-            return result == "DELETE 1"
+                # 辞書(dict)として返す
+                return raw_data
+            return {}
 
-    # ギルド辞書の一覧取得
-    async def get_guild_words(self, guild_id: int):
+    # ギルド辞書の登録または更新
+    async def add_or_update_dict(self, guild_id: int, dict_data: dict):
+        """ギルド辞書を登録または更新する"""
+        dict_json = json.dumps(dict_data)
         async with self.pool.acquire() as conn:
-            return await conn.fetch(
-                DictQueries.GET_DICT_WORDS,
-                guild_id
-            )
+            await conn.execute(DictQueries.INSERT_DICT, guild_id, dict_json)
+        logger.debug(f"[{guild_id}] 辞書を更新しました。")
 
     async def close(self):
         if self.pool:
