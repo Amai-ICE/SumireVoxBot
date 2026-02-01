@@ -24,6 +24,15 @@ class GuildSettings(BaseModel):
     # ローマ字読み
     read_romaji: bool = Field(default=False, description="ローマ字を読み上げるか")
 
+    # 添付ファイル読み上げ
+    read_attachments: bool = Field(default=True, description="添付ファイルの存在を読み上げるか")
+
+    # コードブロックを省略
+    skip_code_blocks: bool = Field(default=True, description="コードブロックを省略する")
+
+    # URLを省略
+    skip_urls: bool = Field(default=True, description="URLを省略する")
+
 class GuildDict(BaseModel):
     # 単語
     word: str = Field(description="元の読み")
