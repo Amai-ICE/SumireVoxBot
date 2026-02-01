@@ -124,15 +124,17 @@ class Voice(commands.Cog):
         settings = await self.bot.db.get_guild_settings(message.guild.id)
         content = message.clean_content
 
+        # コードブロックを省略
+        if settings.skip_code_blocks:
+            content = re.sub(r"```.*?```", "、コードブロック省略、", content, flags=re.DOTALL)
+
+        # URLを省略
+        if settings.skip_urls:
+            content = re.sub(r'https?://[\w/:%#$&?()~.=+\-]+', '、URL省略、', content)
+
         # 辞書適応
         content = await self.apply_dictionary(content, message.guild.id)
         content = await self.apply_dictionary(content, self.GLOBAL_DICT_ID)
-
-        # コードブロックを省略
-        content = re.sub(r"```.*?```", "、コードブロック省略、", content, flags=re.DOTALL)
-
-        # URLを省略
-        content = re.sub(r'https?://[\w/:%#$&?()~.=+\-]+', '、URL省略、', content)
 
         # ローマ字を仮名読みに変換
         if settings.read_romaji:
@@ -147,8 +149,9 @@ class Voice(commands.Cog):
             content = content[:limit] + "、以下略"
 
         # 添付ファイルのチェック
-        if message.attachments:
-            content += f"、{len(message.attachments)}件の添付ファイル"
+        if settings.read_attachments:
+            if message.attachments:
+                content += f"、{len(message.attachments)}件の添付ファイル"
 
         if not content.strip():
             return
