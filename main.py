@@ -4,6 +4,7 @@ from discord.ext import commands
 import os
 from dotenv import load_dotenv
 from aioconsole import ainput
+import signal
 
 # ロガー関連のインポート
 from src.utils.logger import setup_logger, console
@@ -50,6 +51,14 @@ class SumireVox(commands.Bot):
 
     async def setup_hook(self) -> None:
         logger.info("初期化シーケンスを開始します...")
+
+        loop = asyncio.get_event_loop()
+
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            try:
+                loop.add_signal_handler(sig, lambda: asyncio.create_task(bot.close()))
+            except NotImplementedError:
+                pass
 
         try:
             await self.db.init_db()

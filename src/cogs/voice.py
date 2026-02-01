@@ -14,6 +14,15 @@ def is_katakana(text: str) -> bool:
     return re.fullmatch(r'^[ァ-ヶーヴ]+$', text) is not None
 
 
+def format_rows(rows):
+    if not rows: return "登録なし"
+    try:
+        return "\n".join([f"・`{r['word']}` → `{r['reading']}`" for r in rows])
+    except (KeyError, TypeError) as e:
+        logger.error(f"辞書データのフォーマットエラー: {e}")
+        return "データ形式エラー"
+
+
 # noinspection PyUnresolvedReferences
 class Voice(commands.Cog):
     def __init__(self, bot):
@@ -91,7 +100,7 @@ class Voice(commands.Cog):
 
         # 辞書適応
         words_dict = await self.bot.db.get_dict(message.guild.id)
-        if words_dict:
+        if words_dict and isinstance(words_dict, dict):
             for word in sorted(words_dict.keys(), key=len, reverse=True):
                 pattern = re.compile(re.escape(word), re.IGNORECASE)
                 content = pattern.sub(words_dict[word], content)
@@ -218,8 +227,15 @@ class Voice(commands.Cog):
         word = word.strip()
         reading = reading.strip()
 
-        normalized_reading = jaconv.h2z(reading, kana=True, digit=False, ascii=False)
-        normalized_reading = jaconv.hira2kata(normalized_reading)
+        try:
+            normalized_reading = jaconv.h2z(reading, kana=True, digit=False, ascii=False)
+            normalized_reading = jaconv.hira2kata(normalized_reading)
+        except Exception as e:
+            logger.error(f"[{interaction.guild.id}] 読み方の正規化に失敗しました: {e}")
+            return await interaction.response.send_message(
+                "❌ 読み方の変換中にエラーが発生しました。",
+                ephemeral=True
+            )
 
         # 最終チェック
         if not is_katakana(normalized_reading):
@@ -231,34 +247,72 @@ class Voice(commands.Cog):
         if not word:
             return await interaction.response.send_message("❌ 単語を入力してください。", ephemeral=True)
 
-        await self.bot.db.set_guild_word(interaction.guild.id, word, normalized_reading)
-        logger.success(f"[{interaction.guild.id}] 辞書登録: {word} -> {normalized_reading}")
-        return await interaction.response.send_message(
-            f"🏠 サーバー辞書に登録しました: `{word}` → `{normalized_reading}`")
+        try:
+            # 既存の辞書を取得
+            words_dict = await self.bot.db.get_dict(interaction.guild.id)
+
+            # 辞書が存在しない場合は新規作成
+            if not words_dict or not isinstance(words_dict, dict):
+                words_dict = {}
+
+            # 新しい単語と読みを追加
+            words_dict[word] = normalized_reading
+
+            # 更新された辞書をDBに保存
+            await self.bot.db.add_or_update_dict(interaction.guild.id, words_dict)
+
+            logger.success(f"[{interaction.guild.id}] 辞書登録: {word} -> {normalized_reading}")
+            return await interaction.response.send_message(
+                f"🏠 サーバー辞書に登録しました: `{word}` → `{normalized_reading}`")
+        except Exception as e:
+            logger.error(f"[{interaction.guild.id}] 辞書登録に失敗しました: {e}")
+            return await interaction.response.send_message(
+                "❌ 辞書への登録中にエラーが発生しました。",
+                ephemeral=True
+            )
 
     @app_commands.command(name="remove_word", description="辞書から単語を削除します")
     @app_commands.describe(word="削除する単語")
     async def remove_word(self, interaction: discord.Interaction, word: str):
-        success = await self.bot.db.remove_guild_word(interaction.guild.id, word)
+        # DBから現在の辞書を取得
+        words_dict = await self.bot.db.get_dict(interaction.guild.id)
+
+        # 辞書が存在しない、または空の場合
+        if not words_dict or not isinstance(words_dict, dict):
+            return await interaction.response.send_message(f"⚠️ `{word}` は辞書に登録されていません。", ephemeral=True)
+
+        # 削除する単語が辞書に存在するかチェック
+        if word not in words_dict:
+            return await interaction.response.send_message(f"⚠️ `{word}` は辞書に登録されていません。", ephemeral=True)
+
+        # 辞書から単語を削除
+        del words_dict[word]
+
+        # 更新された辞書をDBに保存
+        success = await self.bot.db.add_or_update_dict(interaction.guild.id, words_dict)
 
         if success:
             logger.success(f"[{interaction.guild.id}] 辞書削除: {word}")
             return await interaction.response.send_message(f"🗑️ `{word}` を辞書から削除しました。")
         else:
-            return await interaction.response.send_message(f"⚠️ `{word}` は辞書に登録されていません。", ephemeral=True)
+            return await interaction.response.send_message(f"⚠️ 削除に失敗しました。", ephemeral=True)
 
     @app_commands.command(name="dictionary", description="辞書に登録されている単語一覧を表示します")
     async def dictionary(self, interaction: discord.Interaction):
-        guild_rows = await self.bot.db.get_guild_words(interaction.guild.id)
+        try:
+            guild_rows = await self.bot.db.get_dict(interaction.guild.id)
+        except Exception as e:
+            logger.error(f"[{interaction.guild.id}] 辞書の取得に失敗しました: {e}")
+            return await interaction.response.send_message("❌ 辞書の取得中にエラーが発生しました。", ephemeral=True)
 
-        def format_rows(rows):
-            if not rows: return "登録なし"
-            return "\n".join([f"・`{r['word']}` → `{r['reading']}`" for r in rows])
+        try:
+            embed = discord.Embed(title="📖 辞書一覧", color=discord.Color.blue())
+            embed.add_field(name="🏠 サーバー辞書", value=format_rows(guild_rows), inline=False)
 
-        embed = discord.Embed(title="📖 辞書一覧", color=discord.Color.blue())
-        embed.add_field(name="🏠 サーバー辞書", value=format_rows(guild_rows), inline=False)
-
-        await interaction.response.send_message(embed=embed)
+            await interaction.response.send_message(embed=embed)
+        except Exception as e:
+            logger.error(f"辞書一覧の送信に失敗しました: {e}")
+            await interaction.response.send_message("❌ 辞書一覧の表示中にエラーが発生しました。", ephemeral=True)
 
     @app_commands.command(name="config", description="サーバーごとの読み上げ設定を変更します")
     @app_commands.describe(
@@ -314,6 +368,7 @@ class Voice(commands.Cog):
                 f"❌ 設定の更新に失敗しました。正しい値を入力してください。\n(エラー内容: {e})",
                 ephemeral=True
             )
+
 
 async def setup(bot):
     await bot.add_cog(Voice(bot))
