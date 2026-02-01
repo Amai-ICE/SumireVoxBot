@@ -48,11 +48,11 @@ class Voice(commands.Cog):
 
     async def apply_dictionary(self, content: str, guild_id: int) -> str:
         """辞書を適用してテキストを変換する"""
-        local_dict = await self.bot.db.get_dict(guild_id)
-        if local_dict and isinstance(local_dict, dict):
-            for word in sorted(local_dict.keys(), key=len, reverse=True):
+        words = await self.bot.db.get_dict(guild_id)
+        if words and isinstance(words, dict):
+            for word in sorted(words.keys(), key=len, reverse=True):
                 pattern = re.compile(re.escape(word), re.IGNORECASE)
-                content = pattern.sub(local_dict[word], content)
+                content = pattern.sub(words[word], content)
         return content
 
     @logger.catch()
