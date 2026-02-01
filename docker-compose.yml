@@ -3,8 +3,6 @@ services:
   bot:
     build: .
     container_name: sumire_vox_bot
-    stdin_open: true
-    tty: true
     volumes:
       - .:/app
     depends_on:
