@@ -362,7 +362,10 @@ class Voice(commands.Cog):
         app_commands.Choice(name="入退出の読み上げ (True/False)", value="read_vc_status"),
         app_commands.Choice(name="メンション読み上げ (True/False)", value="read_mention"),
         app_commands.Choice(name="さん付け (True/False)", value="add_suffix"),
-        app_commands.Choice(name="ローマ字読み (True/False)", value="read_romaji")
+        app_commands.Choice(name="ローマ字読み (True/False)", value="read_romaji"),
+        app_commands.Choice(name="添付ファイルの読み上げ (True/False)", value="read_attachments"),
+        app_commands.Choice(name="コードブロックの省略(True/False)", value="skip_code_blocks"),
+        app_commands.Choice(name="URLの省略(True/False)", value="skip_urls"),
     ])
     async def config(self, interaction: discord.Interaction, item: str, value: str):
         # 1. 現在の設定を取得（なければデフォルト値が返る）
