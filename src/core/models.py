@@ -1,4 +1,5 @@
 from pydantic import BaseModel, Field
+from typing import Dict
 
 
 class GuildSettings(BaseModel):
@@ -8,6 +9,10 @@ class GuildSettings(BaseModel):
     """
     # 自動接続
     auto_join: bool = Field(default=False, description="ボイスチャンネルへの自動接続")
+
+    # 自動接続設定
+    # {"bot_id": {"voice": "channel_id", "text": "channel_id"},...}
+    auto_join_config: Dict[str, Dict[str, int]] = Field(default_factory=dict)
 
     # 文字数制限
     max_chars: int = Field(default=50, ge=10, le=500, description="読み上げ文字数の上限")
