@@ -506,7 +506,7 @@ class Voice(commands.Cog):
         embed.add_field(name="入退出通知", value="✅ 有効" if settings.read_vc_status else "ー", inline=True)
 
         embed.add_field(name="コードブロック", value="✂️ 省略" if settings.skip_code_blocks else "ー", inline=True)
-        embed.add_field(name="URL省略", value="✂️ 省略" if settings.skip_urls else "ー", inline=True)
+        embed.add_field(name="URL", value="✂️ 省略" if settings.skip_urls else "ー", inline=True)
         embed.add_field(name="\u200b", value="\u200b", inline=True)
 
         # 自動接続設定
