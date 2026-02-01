@@ -226,6 +226,79 @@ class Voice(commands.Cog):
                         break
             logger.warning(f"[{guild_id}] VC切断を検知したため、キューをクリアしました。")
 
+    @commands.Cog.listener(name="on_voice_state_update")
+    async def auto_join(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
+        """設定に基づいてボイスチャンネルへ自動接続する"""
+        if member.bot:
+            return
+
+        # 誰かがチャンネルに参加したときのみ判定
+        if before.channel == after.channel or after.channel is None:
+            return
+
+        try:
+            settings = await self.bot.db.get_guild_settings(member.guild.id)
+        except Exception as e:
+            logger.error(f"[{member.guild.id}] 自動接続用の設定取得に失敗: {e}")
+            return
+
+        # 全体設定が無効なら何もしない
+        if not settings.auto_join:
+            return
+
+        # このBot用の設定があるか確認
+        bot_key = str(self.bot.user.id)
+        if bot_key not in settings.auto_join_config:
+            return
+
+        config = settings.auto_join_config[bot_key]
+        target_vc_id = config.get("voice")
+        target_tc_id = config.get("text")
+
+        # 参加したチャンネルが指定の監視VCであるか確認
+        if after.channel.id == target_vc_id:
+            # すでにどこかのVCに接続している場合はスキップ
+            if member.guild.voice_client:
+                return
+
+            try:
+                # 接続処理
+                vc = await after.channel.connect()
+                # 読み上げチャンネルを記憶
+                self.read_channels[member.guild.id] = target_tc_id
+
+                logger.success(f"[{member.guild.id}] 自動接続成功: {after.channel.name}")
+
+                # 通知メッセージ（任意）
+                tc = member.guild.get_channel(target_tc_id)
+                if tc:
+                    await tc.send(f"✅ **{after.channel.name}** への入室を検知したため、自動接続しました。")
+            except Exception as e:
+                logger.error(f"[{member.guild.id}] 自動接続に失敗しました: {e}")
+
+    @commands.Cog.listener(name="on_voice_state_update")
+    async def auto_leave(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
+        """VCにBot以外がいなくなった場合に自動で切断する"""
+        # Bot自身が接続しているギルドの音声クライアントを取得
+        voice_client = member.guild.voice_client
+        if not voice_client:
+            return
+
+        target_channel = voice_client.channel
+
+        # Bot以外のメンバー（Bot: False）のリストを取得
+        non_bot_members = [m for m in target_channel.members if not m.bot]
+
+        # Bot以外がいなければ切断
+        if len(non_bot_members) == 0:
+            logger.info(f"[{member.guild.id}] VC({target_channel.name})にユーザーがいなくなったため自動切断します。")
+
+            # 内部情報のクリア（read_channels など）
+            self.read_channels.pop(member.guild.id, None)
+
+            # 切断
+            await voice_client.disconnect(force=True)
+
     @app_commands.command(name="join", description="ボイスチャンネルに接続し、このチャンネルを読み上げます")
     async def join(self, interaction: discord.Interaction):
         if interaction.user.voice:
