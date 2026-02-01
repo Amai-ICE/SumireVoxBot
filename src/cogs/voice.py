@@ -17,11 +17,12 @@ def is_katakana(text: str) -> bool:
 def format_rows(rows):
     if not rows: return "登録なし"
     try:
+        if isinstance(rows, dict):
+            return "\n".join([f"・`{word}` → `{reading}`" for word, reading in rows.items()])
         return "\n".join([f"・`{r['word']}` → `{r['reading']}`" for r in rows])
     except (KeyError, TypeError) as e:
         logger.error(f"辞書データのフォーマットエラー: {e}")
         return "データ形式エラー"
-
 
 # noinspection PyUnresolvedReferences
 class Voice(commands.Cog):
@@ -274,8 +275,13 @@ class Voice(commands.Cog):
     @app_commands.command(name="remove_word", description="辞書から単語を削除します")
     @app_commands.describe(word="削除する単語")
     async def remove_word(self, interaction: discord.Interaction, word: str):
+        word = word.strip()
         # DBから現在の辞書を取得
-        words_dict = await self.bot.db.get_dict(interaction.guild.id)
+        try:
+            words_dict = await self.bot.db.get_dict(interaction.guild.id)
+        except Exception as e:
+            logger.error(f"[{interaction.guild.id}] 辞書の取得に失敗しました: {e}")
+            return await interaction.response.send_message("❌ 辞書の取得中にエラーが発生しました。", ephemeral=True)
 
         # 辞書が存在しない、または空の場合
         if not words_dict or not isinstance(words_dict, dict):
@@ -286,15 +292,24 @@ class Voice(commands.Cog):
             return await interaction.response.send_message(f"⚠️ `{word}` は辞書に登録されていません。", ephemeral=True)
 
         # 辞書から単語を削除
-        del words_dict[word]
+        try:
+            del words_dict[word]
+        except Exception as e:
+            logger.error(f"[{interaction.guild.id}] 辞書からの単語削除に失敗しました: {e}")
+            return await interaction.response.send_message("❌ 辞書の更新中にエラーが発生しました。", ephemeral=True)
 
         # 更新された辞書をDBに保存
-        success = await self.bot.db.add_or_update_dict(interaction.guild.id, words_dict)
+        try:
+            success = await self.bot.db.add_or_update_dict(interaction.guild.id, words_dict)
+        except Exception as e:
+            logger.error(f"[{interaction.guild.id}] 辞書の保存に失敗しました: {e}")
+            return await interaction.response.send_message("❌ 辞書の保存中にエラーが発生しました。", ephemeral=True)
 
         if success:
             logger.success(f"[{interaction.guild.id}] 辞書削除: {word}")
             return await interaction.response.send_message(f"🗑️ `{word}` を辞書から削除しました。")
         else:
+            logger.warning(f"[{interaction.guild.id}] 辞書削除に失敗しました: {word}")
             return await interaction.response.send_message(f"⚠️ 削除に失敗しました。", ephemeral=True)
 
     @app_commands.command(name="dictionary", description="辞書に登録されている単語一覧を表示します")
