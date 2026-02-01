@@ -86,10 +86,11 @@ class Voice(commands.Cog):
         if message.content.startswith(("!", "！")):
             return
 
+        settings = await self.bot.db.get_guild_settings(message.guild.id)
         content = message.clean_content
 
         # 辞書適応
-        words_dict = await self.bot.db.get_guild_dict(message.guild.id)
+        words_dict = await self.bot.db.get_dict(message.guild.id)
         if words_dict:
             for word in sorted(words_dict.keys(), key=len, reverse=True):
                 pattern = re.compile(re.escape(word), re.IGNORECASE)
@@ -102,7 +103,8 @@ class Voice(commands.Cog):
         content = re.sub(r'https?://[\w/:%#$&?()~.=+\-]+', '、URL省略、', content)
 
         # ローマ字を仮名読みに変換
-        content = romkan2.to_hiragana(content)
+        if settings.read_romaji:
+            content = romkan2.to_hiragana(content)
 
         # 長文対策
         settings = await self.bot.db.get_guild_settings(message.guild.id)
@@ -269,6 +271,7 @@ class Voice(commands.Cog):
         app_commands.Choice(name="入退出の読み上げ (True/False)", value="read_vc_status"),
         app_commands.Choice(name="メンション読み上げ (True/False)", value="read_mention"),
         app_commands.Choice(name="さん付け (True/False)", value="add_suffix"),
+        app_commands.Choice(name="ローマ字読み (True/False)", value="read_romaji")
     ])
     async def config(self, interaction: discord.Interaction, item: str, value: str):
         # 1. 現在の設定を取得（なければデフォルト値が返る）

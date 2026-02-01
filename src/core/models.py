@@ -23,3 +23,10 @@ class GuildSettings(BaseModel):
     
     # ローマ字読み
     read_romaji: bool = Field(default=False, description="ローマ字を読み上げるか")
+
+class GuildDict(BaseModel):
+    # 単語
+    word: str = Field(description="元の読み")
+
+    # 読み
+    reading: str = Field(description="新しい読み")
