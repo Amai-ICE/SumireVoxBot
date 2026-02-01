@@ -7,8 +7,7 @@ import re
 import jaconv
 from loguru import logger
 import romkan2
-
-GLOBAL_DICT_ID = 1460650319028687045
+from dotenv import load_dotenv
 
 
 def is_katakana(text: str) -> bool:
@@ -35,6 +34,9 @@ class Voice(commands.Cog):
         self.queues = {}
         self.is_processing = {}
         self.read_channels = {}
+
+        load_dotenv()
+        self.GLOBAL_DICT_ID = int(os.getenv("GLOBAL_DICT_ID"))
 
         if not os.path.exists(self.temp_dir):
             os.makedirs(self.temp_dir)
@@ -124,7 +126,7 @@ class Voice(commands.Cog):
 
         # 辞書適応
         content = await self.apply_dictionary(content, message.guild.id)
-        content = await self.apply_dictionary(content, GLOBAL_DICT_ID)
+        content = await self.apply_dictionary(content, self.GLOBAL_DICT_ID)
 
         # コードブロックを省略
         content = re.sub(r"```.*?```", "、コードブロック省略、", content, flags=re.DOTALL)
