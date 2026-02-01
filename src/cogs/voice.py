@@ -8,6 +8,8 @@ import jaconv
 from loguru import logger
 import romkan2
 
+GLOBAL_DICT_ID = 1460650319028687045
+
 
 def is_katakana(text: str) -> bool:
     """全角カタカナ、長音記号のみで構成されているか判定"""
@@ -23,6 +25,7 @@ def format_rows(rows):
     except (KeyError, TypeError) as e:
         logger.error(f"辞書データのフォーマットエラー: {e}")
         return "データ形式エラー"
+
 
 # noinspection PyUnresolvedReferences
 class Voice(commands.Cog):
@@ -42,6 +45,15 @@ class Voice(commands.Cog):
             self.queues[guild_id] = asyncio.Queue()
             self.is_processing[guild_id] = False
         return self.queues[guild_id]
+
+    async def apply_dictionary(self, content: str, guild_id: int) -> str:
+        """辞書を適用してテキストを変換する"""
+        local_dict = await self.bot.db.get_dict(guild_id)
+        if local_dict and isinstance(local_dict, dict):
+            for word in sorted(local_dict.keys(), key=len, reverse=True):
+                pattern = re.compile(re.escape(word), re.IGNORECASE)
+                content = pattern.sub(local_dict[word], content)
+        return content
 
     @logger.catch()
     async def play_next(self, guild_id: int):
@@ -100,11 +112,8 @@ class Voice(commands.Cog):
         content = message.clean_content
 
         # 辞書適応
-        words_dict = await self.bot.db.get_dict(message.guild.id)
-        if words_dict and isinstance(words_dict, dict):
-            for word in sorted(words_dict.keys(), key=len, reverse=True):
-                pattern = re.compile(re.escape(word), re.IGNORECASE)
-                content = pattern.sub(words_dict[word], content)
+        content = await self.apply_dictionary(content, message.guild.id)
+        content = await self.apply_dictionary(content, GLOBAL_DICT_ID)
 
         # コードブロックを省略
         content = re.sub(r"```.*?```", "、コードブロック省略、", content, flags=re.DOTALL)
