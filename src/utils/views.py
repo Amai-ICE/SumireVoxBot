@@ -165,15 +165,20 @@ class ConfigSearchView(discord.ui.View):
                                  emoji="🚪"),
             discord.SelectOption(label="メンション", value="read_mention", description="メンションを名前で読み上げるか",
                                  emoji="🆔"),
-            discord.SelectOption(label="さん付け", value="add_suffix", description="名前に「さん」を付けるか", emoji="🎀"),
+            discord.SelectOption(label="さん付け", value="add_suffix", description="名前に「さん」を付けるか",
+                                 emoji="🎀"),
             discord.SelectOption(label="ローマ字読み", value="read_romaji", description="ローマ字をそのまま読むか",
                                  emoji="🔤"),
             discord.SelectOption(label="添付ファイル", value="read_attachments", description="ファイル名を読み上げるか",
                                  emoji="📎"),
+            discord.SelectOption(label="絵文字", value="read_emoji", description="絵文字を読み上げるか",
+                                 emoji="😀"),
             discord.SelectOption(label="コードブロック", value="skip_code_blocks", description="コードをスキップするか",
                                  emoji="💻"),
-            discord.SelectOption(label="URL省略", value="skip_urls", description="URLを省略して読むか", emoji="🔗"),
-            discord.SelectOption(label="設定パネルを閉じる", value="close", description="このメッセージを削除します", emoji="🗑️")
+            discord.SelectOption(label="URL省略", value="skip_urls", description="URLを省略して読むか",
+                                 emoji="🔗"),
+            discord.SelectOption(label="設定パネルを閉じる", value="close", description="このメッセージを削除します",
+                                 emoji="🗑️")
         ]
     )
     async def select_item(self, interaction: discord.Interaction, select: discord.ui.Select):

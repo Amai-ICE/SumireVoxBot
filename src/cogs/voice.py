@@ -1,4 +1,5 @@
 import discord
+import emoji
 from discord import app_commands
 from discord.ext import commands
 import os
@@ -180,6 +181,16 @@ class Voice(commands.Cog):
         # URLを省略
         if settings.skip_urls:
             content = re.sub(r'https?://[\w/:%#$&?()~.=+\-]+', '、URL省略、', content)
+
+        # サーバー絵文字の処理
+        content = re.sub(r'<a?:(\w+):?\d+>', r'\1', content)
+
+        # 絵文字の読み上げ
+        if settings.read_emoji:
+            content = emoji.demojize(content, language='ja')
+            content = content.replace(":", "、")
+        else:
+            content = emoji.replace_emoji(content, "")
 
         # 辞書適応
         content = await self.apply_dictionary(content, message.guild.id)
@@ -509,16 +520,16 @@ class Voice(commands.Cog):
 
         # 基本設定
         embed.add_field(name="文字数制限", value=f"📝 `{settings.max_chars}` 文字", inline=True)
-        embed.add_field(name="さん付け", value="✅ 有効" if settings.add_suffix else "ー", inline=True)
-        embed.add_field(name="ローマ字読み", value="✅ 有効" if settings.read_romaji else "ー", inline=True)
+        embed.add_field(name="さん付け", value="✅ 有効" if settings.add_suffix else "❌ 無効", inline=True)
+        embed.add_field(name="ローマ字読み", value="✅ 有効" if settings.read_romaji else "❌ 無効", inline=True)
 
-        embed.add_field(name="メンション", value="✅ 有効" if settings.read_mention else "ー", inline=True)
-        embed.add_field(name="添付ファイル", value="✅ 有効" if settings.read_attachments else "ー", inline=True)
-        embed.add_field(name="入退出通知", value="✅ 有効" if settings.read_vc_status else "ー", inline=True)
+        embed.add_field(name="メンション", value="✅ 有効" if settings.read_mention else "❌ 無効", inline=True)
+        embed.add_field(name="添付ファイル", value="✅ 有効" if settings.read_attachments else "❌ 無効", inline=True)
+        embed.add_field(name="入退出通知", value="✅ 有効" if settings.read_vc_status else "❌ 無効", inline=True)
 
-        embed.add_field(name="コードブロック", value="✂️ 省略" if settings.skip_code_blocks else "ー", inline=True)
-        embed.add_field(name="URL", value="✂️ 省略" if settings.skip_urls else "ー", inline=True)
-        embed.add_field(name="\u200b", value="\u200b", inline=True)
+        embed.add_field(name="絵文字の読み上げ", value="✅ 有効" if settings.read_emoji else "❌ 無効", inline=True)
+        embed.add_field(name="コードブロックの省略", value="✅ 有効" if settings.skip_code_blocks else "❌ 無効", inline=True)
+        embed.add_field(name="URLの省略", value="✅ 有効" if settings.skip_urls else "❌ 無効", inline=True)
 
         # 自動接続設定
         bot_key = str(self.bot.user.id)

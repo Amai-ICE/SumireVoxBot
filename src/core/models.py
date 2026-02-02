@@ -23,6 +23,9 @@ class GuildSettings(BaseModel):
     # メンション読み上げ
     read_mention: bool = Field(default=True, description="メンションを名前で読み上げるか")
 
+    # 絵文字読み上げ
+    read_emoji: bool = Field(default=True, description="絵文字を読み上げるか")
+
     # さん付け
     add_suffix: bool = Field(default=False, description="ユーザー名の後に『さん』を付ける")
     
