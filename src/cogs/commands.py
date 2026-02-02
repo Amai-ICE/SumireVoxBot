@@ -11,10 +11,11 @@ class Commands(commands.Cog):
 
     @app_commands.command(
         name="ping",
-        description="Pongを返します"
+        description="Botの応答速度を確認します"
     )
     async def ping(self, interaction: discord.Interaction):
-        return await interaction.response.send_message(f"Pong! {self.bot.latency * 1000:.2f}ms", ephemeral=True)
+        latency = round(self.bot.latency * 1000)
+        await interaction.response.send_message(f"🏓 Pong! レイテンシ: {latency}ms")
 
     @app_commands.command(
         name="sync",
@@ -44,19 +45,42 @@ class Commands(commands.Cog):
             # 2. コマンドの同期
             synced = await self.bot.tree.sync()
 
-            # メッセージの構築
-            res_msg = f"✅ {len(synced)}個のコマンドを同期しました。\n"
-            res_msg += f"📦 リロード完了: {', '.join(reloaded_cogs)}"
+            # Embedの構築
+            embed = discord.Embed(
+                title="🔄 同期完了",
+                color=discord.Color.green() if not failed_cogs else discord.Color.orange()
+            )
+
+            embed.add_field(
+                name="✅ コマンド同期",
+                value=f"{len(synced)}個のコマンドを同期しました。",
+                inline=False
+            )
+
+            embed.add_field(
+                name="📦 リロード完了",
+                value=', '.join(reloaded_cogs) if reloaded_cogs else "なし",
+                inline=False
+            )
 
             if failed_cogs:
-                res_msg += f"\n❌ リロード失敗: {', '.join(failed_cogs)}"
+                embed.add_field(
+                    name="❌ リロード失敗",
+                    value='\n'.join(failed_cogs),
+                    inline=False
+                )
 
             logger.success(f"同期完了: {len(synced)}個のコマンド, {len(reloaded_cogs)}個のCog")
-            await interaction.followup.send(res_msg)
+            await interaction.followup.send(embed=embed)
 
         except Exception as e:
             logger.error(f"同期中にエラーが発生しました: {e}")
-            await interaction.followup.send(f"同期中にエラーが発生しました: {str(e)}")
+            error_embed = discord.Embed(
+                title="❌ エラー",
+                description=f"同期中にエラーが発生しました: {str(e)}",
+                color=discord.Color.red()
+            )
+            await interaction.followup.send(embed=error_embed)
 
 
 async def setup(bot):
