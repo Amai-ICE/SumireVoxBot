@@ -295,12 +295,20 @@ class Voice(commands.Cog):
     @commands.Cog.listener(name="on_voice_state_update")
     async def auto_leave(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
         """VCにBot以外がいなくなった場合に自動で切断する"""
+        if before.channel is None or before.channel == after.channel:
+            return
+
         # Bot自身が接続しているギルドの音声クライアントを取得
         voice_client = member.guild.voice_client
         if not voice_client:
             return
 
         target_channel = voice_client.channel
+
+        if before.channel.id != target_channel.id:
+            return
+
+        await asyncio.sleep(3)
 
         # Bot以外のメンバー（Bot: False）のリストを取得
         non_bot_members = [m for m in target_channel.members if not m.bot]
