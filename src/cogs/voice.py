@@ -317,48 +317,131 @@ class Voice(commands.Cog):
 
     @app_commands.command(name="join", description="ボイスチャンネルに接続し、このチャンネルを読み上げます")
     async def join(self, interaction: discord.Interaction):
-        if interaction.user.voice:
+        # ユーザーがボイスチャンネルに接続しているか確認
+        if not interaction.user.voice:
+            embed = discord.Embed(
+                title="❌ 接続エラー",
+                description="ボイスチャンネルに接続してから実行してください。",
+                color=discord.Color.red()
+            )
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
+
+        # 既にBotが接続している場合のチェック
+        if interaction.guild.voice_client:
+            embed = discord.Embed(
+                title="⚠️ 既に接続しています",
+                description=f"既に **{interaction.guild.voice_client.channel.name}** に接続しています。\n先に `/leave` で切断してください。",
+                color=discord.Color.orange()
+            )
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
+
+        channel = interaction.user.voice.channel
+
+        try:
+            # VC接続を試行
+            await channel.connect()
+
             # 読み上げチャンネルを記憶
             self.read_channels[interaction.guild.id] = interaction.channel.id
 
-            channel = interaction.user.voice.channel
-            await channel.connect()
             logger.success(f"[{interaction.guild.id}] {channel.name} に接続しました。")
-            embed=discord.Embed(
+
+            embed = discord.Embed(
                 title="✅ 接続しました",
                 description=f"**{channel.name}** に接続しました。\nこのチャンネルのチャットを読み上げます。",
                 color=discord.Color.green()
             )
             await interaction.response.send_message(embed=embed)
-        else:
+
+        except discord.errors.ClientException as e:
+            logger.error(f"[{interaction.guild.id}] VC接続エラー (ClientException): {e}")
             embed = discord.Embed(
                 title="❌ 接続エラー",
-                description="ボイスチャンネルに接続してから実行してください。",
+                description="既にボイスチャンネルに接続しています。",
+                color=discord.Color.red()
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+        except discord.errors.Forbidden as e:
+            logger.error(f"[{interaction.guild.id}] VC接続エラー (権限不足): {e}")
+            embed = discord.Embed(
+                title="❌ 権限エラー",
+                description=f"**{channel.name}** に接続する権限がありません。\nチャンネルの権限設定を確認してください。",
+                color=discord.Color.red()
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+        except asyncio.TimeoutError:
+            logger.error(f"[{interaction.guild.id}] VC接続エラー (タイムアウト)")
+            embed = discord.Embed(
+                title="❌ 接続タイムアウト",
+                description="ボイスチャンネルへの接続がタイムアウトしました。\nしばらく時間をおいてから再度お試しください。",
+                color=discord.Color.red()
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+        except Exception as e:
+            logger.error(f"[{interaction.guild.id}] VC接続中に予期しないエラーが発生しました: {e}")
+            embed = discord.Embed(
+                title="❌ 接続エラー",
+                description="ボイスチャンネルへの接続中にエラーが発生しました。\nしばらく時間をおいてから再度お試しください。",
                 color=discord.Color.red()
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @app_commands.command(name="leave", description="切断して読み上げを終了します")
     async def leave(self, interaction: discord.Interaction):
-        if interaction.guild.voice_client:
-            # チャンネルの記憶を削除
-            self.read_channels.pop(interaction.guild.id, None)
+        try:
+            if interaction.guild.voice_client:
+                # チャンネルの記憶を削除
+                self.read_channels.pop(interaction.guild.id, None)
 
-            await interaction.guild.voice_client.disconnect(force=True)
-            logger.info(f"[{interaction.guild.id}] VCから切断しました。")
-            embed = discord.Embed(
-                title="👋 切断しました",
-                description="ボイスチャンネルから切断しました。",
-                color=discord.Color.blue()
-            )
-            await interaction.response.send_message(embed=embed)
-        else:
-            embed = discord.Embed(
-                title="❌ 接続エラー",
-                description="Botはボイスチャンネルに接続していません。",
-                color=discord.Color.red()
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+                try:
+                    await interaction.guild.voice_client.disconnect(force=True)
+                    logger.info(f"[{interaction.guild.id}] VCから切断しました。")
+                    embed = discord.Embed(
+                        title="👋 切断しました",
+                        description="ボイスチャンネルから切断しました。",
+                        color=discord.Color.blue()
+                    )
+                    await interaction.response.send_message(embed=embed)
+                except discord.errors.HTTPException as e:
+                    logger.error(f"[{interaction.guild.id}] VC切断中にHTTPエラーが発生しました: {e}")
+                    embed = discord.Embed(
+                        title="❌ 切断エラー",
+                        description="切断中に通信エラーが発生しました。\nBotは既に切断されている可能性があります。",
+                        color=discord.Color.red()
+                    )
+                    await interaction.response.send_message(embed=embed, ephemeral=True)
+                except Exception as e:
+                    logger.error(f"[{interaction.guild.id}] VC切断中に予期しないエラーが発生しました: {e}")
+                    embed = discord.Embed(
+                        title="❌ 切断エラー",
+                        description="切断中にエラーが発生しました。\nしばらく時間をおいてから再度お試しください。",
+                        color=discord.Color.red()
+                    )
+                    await interaction.response.send_message(embed=embed, ephemeral=True)
+            else:
+                embed = discord.Embed(
+                    title="❌ 接続エラー",
+                    description="Botはボイスチャンネルに接続していません。",
+                    color=discord.Color.red()
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+        except Exception as e:
+            logger.error(f"[{interaction.guild.id}] leaveコマンド実行中に予期しないエラーが発生しました: {e}")
+            try:
+                embed = discord.Embed(
+                    title="❌ エラー",
+                    description="コマンド実行中にエラーが発生しました。",
+                    color=discord.Color.red()
+                )
+                if interaction.response.is_done():
+                    await interaction.followup.send(embed=embed, ephemeral=True)
+                else:
+                    await interaction.response.send_message(embed=embed, ephemeral=True)
+            except Exception:
+                logger.error(f"[{interaction.guild.id}] エラーメッセージの送信にも失敗しました")
 
     @app_commands.command(name="set_voice", description="自分の声をカスタマイズします")
     @app_commands.choices(speaker=[
