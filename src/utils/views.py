@@ -140,7 +140,7 @@ class ConfigAutoJoinView(discord.ui.View):
 
         await update_config_message(self.bot, interaction, settings, self.original_message)
 
-        await interaction.response.send_message(
+        return await interaction.response.send_message(
             f"✅ **{self.bot.user.name}** の自動接続設定を保存しました！",
             ephemeral=True
         )
@@ -189,7 +189,7 @@ class ConfigSearchView(discord.ui.View):
                 await interaction.message.delete()
             except Exception:
                 await interaction.response.edit_message(content="✅ パネルを閉じました。", embed=None, view=None)
-            return
+            return None
 
         if item_key == "auto_join":
             return await interaction.response.send_message(
@@ -203,12 +203,12 @@ class ConfigSearchView(discord.ui.View):
         item_label = [opt.label for opt in select.options if opt.value == item_key][0]
 
         if isinstance(current_value, bool):
-            await interaction.response.send_message(
+            return await interaction.response.send_message(
                 f"**{item_label}** の切り替え：",
                 view=ConfigToggleView(item_label, item_key, self.db, self.bot, self.message),
                 ephemeral=True
             )
         else:
-            await interaction.response.send_modal(
+            return await interaction.response.send_modal(
                 ConfigEditModal(item_label, item_key, current_value, self.db, self.bot, self.message)
             )
