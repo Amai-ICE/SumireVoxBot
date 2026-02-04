@@ -57,11 +57,27 @@ class Voice(commands.Cog):
         words = await self.bot.db.get_dict(guild_id)
         if words and isinstance(words, dict):
             for word in sorted(words.keys(), key=len, reverse=True):
-                pattern = re.compile(re.escape(word), re.IGNORECASE)
-                content = pattern.sub(words[word], content)
+                word_str = str(word)
+                pattern = re.compile(re.escape(word_str), re.IGNORECASE)
+                content = pattern.sub(str(words[word]), content)
         return content
 
-    @logger.catch()
+    async def _get_guild_dict(self, interaction: discord.Interaction) -> dict | None:
+        """ギルドの辞書を取得する共通ヘルパー。エラー時はユーザーに応答を返し None を戻す"""
+        try:
+            words_dict = await self.bot.db.get_dict(interaction.guild.id)
+            return words_dict if isinstance(words_dict, dict) else {}
+        except Exception as e:
+            logger.error(f"[{interaction.guild.id}] 辞書の取得に失敗しました: {e}")
+            embed = discord.Embed(
+                title="❌ 辞書の取得エラー",
+                description="辞書の取得中にエラーが発生しました。",
+                color=discord.Color.red()
+            )
+            if not interaction.response.is_done():
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+            return None
+
     async def play_next(self, guild_id: int):
         self.is_processing[guild_id] = True
         queue = self.get_queue(guild_id)
@@ -325,7 +341,7 @@ class Voice(commands.Cog):
 
             try:
                 # 接続処理
-                vc = await after.channel.connect()
+                await after.channel.connect()
                 # 読み上げチャンネルを記憶
                 self.read_channels[member.guild.id] = target_tc_id
 
@@ -499,8 +515,12 @@ class Voice(commands.Cog):
                     await interaction.followup.send(embed=embed, ephemeral=True)
                 else:
                     await interaction.response.send_message(embed=embed, ephemeral=True)
-            except Exception:
-                logger.error(f"[{interaction.guild.id}] エラーメッセージの送信にも失敗しました")
+            except Exception as e:
+                logger.error(f"[{interaction.guild.id}] エラーが発生しました: {e}")
+                try:
+                    await interaction.followup.send("エラーが発生しました。")
+                except discord.HTTPException:
+                    logger.error(f"[{interaction.guild.id}] エラーメッセージの送信にも失敗しました")
 
     @app_commands.command(name="set_voice", description="自分の声をカスタマイズします")
     @app_commands.choices(speaker=[
@@ -638,16 +658,8 @@ class Voice(commands.Cog):
     async def remove_word(self, interaction: discord.Interaction, word: str):
         word = word.strip()
         # DBから現在の辞書を取得
-        try:
-            words_dict = await self.bot.db.get_dict(interaction.guild.id)
-        except Exception as e:
-            logger.error(f"[{interaction.guild.id}] 辞書の取得に失敗しました: {e}")
-            embed = discord.Embed(
-                title="❌ 辞書の取得エラー",
-                description="辞書の取得中にエラーが発生しました。",
-                color=discord.Color.red()
-            )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
+        words_dict = await self._get_guild_dict(interaction)
+        if words_dict is None: return None
 
         # 辞書が存在しない、または空の場合
         if not words_dict or not isinstance(words_dict, dict):
@@ -710,16 +722,8 @@ class Voice(commands.Cog):
 
     @app_commands.command(name="dictionary", description="辞書に登録されている単語一覧を表示します")
     async def dictionary(self, interaction: discord.Interaction):
-        try:
-            guild_rows = await self.bot.db.get_dict(interaction.guild.id)
-        except Exception as e:
-            logger.error(f"[{interaction.guild.id}] 辞書の取得に失敗しました: {e}")
-            embed = discord.Embed(
-                title="❌ 辞書の取得エラー",
-                description="辞書の取得中にエラーが発生しました。",
-                color=discord.Color.red()
-            )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
+        guild_rows = await self._get_guild_dict(interaction)
+        if guild_rows is None: return
 
         try:
             embed = discord.Embed(title="📖 辞書一覧", color=discord.Color.blue())
