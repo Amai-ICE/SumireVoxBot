@@ -110,7 +110,7 @@ class SumireVox(commands.Bot):
         _ready_logged = True
 
         vv_url = f"http://{VOICEVOX_HOST}:{VOICEVOX_PORT}"
-        web_url = f"http://0.0.0.0:{WEB_PORT}"
+        web_url = f"http://localhost:{WEB_PORT}"
 
         admin_user = os.getenv("ADMIN_USER", "Not Configured")
 
