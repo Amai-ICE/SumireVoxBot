@@ -3,8 +3,8 @@ import discord
 from discord.ext import commands
 import os
 from dotenv import load_dotenv
-from aioconsole import ainput
 import signal
+import uvicorn
 
 # ロガー関連のインポート
 from src.utils.logger import setup_logger, console
@@ -13,6 +13,7 @@ from rich import box
 
 from src.core.voicevox_client import VoicevoxClient
 from src.core.database import Database
+from src.web.web import app as web_app
 
 # ロガーのセットアップ
 logger = setup_logger()
@@ -25,9 +26,9 @@ intents.message_content = True
 COMMAND_PREFIX: str = "!"
 SYNC_KEY: str = "s"
 QUIT_KEY: str = "q"
-DEFAULT_WEB_PORT: int = 8080
-DEFAULT_VOICEVOX_HOST: str = "127.0.0.1"
-DEFAULT_VOICEVOX_PORT: int = 50021
+WEB_PORT: int = int(os.getenv("WEB_PORT", 8080))
+VOICEVOX_HOST = os.getenv("VOICEVOX_HOST", "127.0.0.1")
+VOICEVOX_PORT = int(os.getenv("VOICEVOX_PORT", 50021))
 
 COGS: list[str] = [
     "src.cogs.voice",
@@ -42,7 +43,7 @@ class SumireVox(commands.Bot):
             intents=intents,
             help_command=None
         )
-        self.web_admin_task: asyncio.Task | None = None
+        self.web_task: asyncio.Task | None = None
         self.keystroke_task: asyncio.Task | None = None
         self.vv_client: VoicevoxClient | None = VoicevoxClient()
         self.db: Database | None = Database()
@@ -73,6 +74,11 @@ class SumireVox(commands.Bot):
             except Exception as e:
                 logger.error(f"{cog} の読み込みに失敗しました: {e}")
 
+        config = uvicorn.Config(web_app, host="0.0.0.0", port=WEB_PORT)
+        server = uvicorn.Server(config)
+        self.web_task = asyncio.create_task(server.serve())
+        logger.success(f"Web管理画面をポート {WEB_PORT} で起動しました")
+
     async def close(self) -> None:
         logger.warning("シャットダウンシーケンスを開始します...")
 
@@ -88,6 +94,13 @@ class SumireVox(commands.Bot):
         except Exception as e:
             logger.error(f"データベース接続の終了に失敗: {e}")
 
+        try:
+            if self.web_task:
+                self.web_task.cancel()
+                logger.success(f"Web管理画面を終了しました")
+        except Exception as e:
+            logger.error(f"Web管理画面の終了に失敗: {e}")
+
         await super().close()
         logger.success("Discord セッションを終了しました")
 
@@ -96,9 +109,8 @@ class SumireVox(commands.Bot):
             return
         _ready_logged = True
 
-        vv_host = os.getenv("VOICEVOX_HOST", DEFAULT_VOICEVOX_HOST)
-        vv_port = os.getenv("VOICEVOX_PORT", DEFAULT_VOICEVOX_PORT)
-        vv_url = f"http://{vv_host}:{vv_port}"
+        vv_url = f"http://{VOICEVOX_HOST}:{VOICEVOX_PORT}"
+        web_url = f"http://0.0.0.0:{WEB_PORT}"
 
         admin_user = os.getenv("ADMIN_USER", "Not Configured")
 
@@ -118,7 +130,7 @@ class SumireVox(commands.Bot):
 
         # エンジンの情報を表示
         table.add_row("VOICEVOX Engine", f"[link={vv_url}]{vv_url}[/link]")
-        table.add_row("外部アクセス", "[yellow]無効 (Localhost Only)[/yellow]")
+        table.add_row("WEB管理画面", f"[link={web_url}]{web_url}[/link]")
 
         console.print(table)
         logger.success("SumireVox は正常に起動し、待機中です。")
