@@ -16,3 +16,4 @@ pydantic
 ffmpeg
 romkan2
 emoji
+uuid
