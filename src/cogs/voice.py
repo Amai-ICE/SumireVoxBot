@@ -10,6 +10,9 @@ from loguru import logger
 import romkan2
 from dotenv import load_dotenv
 from src.utils.views import ConfigSearchView
+import uuid
+from dataclasses import dataclass, field
+
 
 AUTO_LEAVE_INTERVAL: int = 1
 
@@ -30,12 +33,24 @@ def format_rows(rows):
         return "データ形式エラー"
 
 
+@dataclass
+class AudioTask:
+    """音声生成タスクを管理するデータクラス"""
+    task_id: str
+    text: str
+    author_id: int
+    file_path: str
+    generation_task: asyncio.Task = field(default=None, repr=False)
+    is_ready: asyncio.Event = field(default_factory=asyncio.Event, repr=False)
+    is_failed: bool = False
+
+
 # noinspection PyUnresolvedReferences
 class Voice(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.temp_dir = "temp"
-        self.queues = {}
+        self.queues: dict[int, asyncio.Queue[AudioTask]] = {}  # AudioTaskのキュー
         self.is_processing = {}
         self.read_channels = {}
 
@@ -46,7 +61,7 @@ class Voice(commands.Cog):
             os.makedirs(self.temp_dir)
             logger.info(f"一時ディレクトリを作成しました: {self.temp_dir}")
 
-    def get_queue(self, guild_id: int) -> asyncio.Queue:
+    def get_queue(self, guild_id: int) -> asyncio.Queue[AudioTask]:
         if guild_id not in self.queues:
             self.queues[guild_id] = asyncio.Queue()
             self.is_processing[guild_id] = False
@@ -78,42 +93,24 @@ class Voice(commands.Cog):
                 await interaction.response.send_message(embed=embed, ephemeral=True)
             return None
 
-    async def play_next(self, guild_id: int):
-        self.is_processing[guild_id] = True
-        queue = self.get_queue(guild_id)
-        guild = self.bot.get_guild(guild_id) or await self.bot.fetch_guild(guild_id)
-
-        try:
-            while not queue.empty():
-                text, author_id = await queue.get()
-                try:
-                    await self._process_and_play(guild, text, author_id)
-                except Exception as e:
-                    logger.error(f"[{guild_id}] 再生中にエラーが発生しました: {e}")
-                finally:
-                    queue.task_done()
-        finally:
-            self.is_processing[guild_id] = False
-
-    async def _process_and_play(self, guild, text, author_id):
-        """1つのテキストを処理して再生する内部メソッド"""
-        file_path = f"{self.temp_dir}/audio_{guild.id}.wav"
-
+    async def _generate_audio(self, audio_task: AudioTask, guild_id: int):
+        """音声ファイルを生成する（バックグラウンドタスク）"""
         try:
             # DBからユーザー設定を読み込む
             try:
-                s = await self.bot.db.get_user_setting(author_id)
+                s = await self.bot.db.get_user_setting(audio_task.author_id)
             except Exception as e:
-                logger.error(f"[{guild.id}] ユーザー設定の取得に失敗しました (user_id: {author_id}): {e}")
-                # デフォルト設定を使用
+                logger.error(f"[{guild_id}] ユーザー設定の取得に失敗しました (user_id: {audio_task.author_id}): {e}")
                 s = {"speaker": 1, "speed": 1.0, "pitch": 0.0}
 
             # 正規化処理
             try:
-                normalized_text = jaconv.h2z(text, kana=True, digit=True, ascii=True).lower()
-                logger.debug(f"[{guild.id}] 音声生成開始: {normalized_text[:20]}...")
+                normalized_text = jaconv.h2z(audio_task.text, kana=True, digit=True, ascii=True).lower()
+                logger.debug(f"[{guild_id}] 音声生成開始 ({audio_task.task_id}): {normalized_text[:20]}...")
             except Exception as e:
-                logger.error(f"[{guild.id}] テキストの正規化に失敗しました: {e}")
+                logger.error(f"[{guild_id}] テキストの正規化に失敗しました: {e}")
+                audio_task.is_failed = True
+                audio_task.is_ready.set()
                 return
 
             # 音声生成
@@ -123,63 +120,144 @@ class Voice(commands.Cog):
                     speaker_id=s["speaker"],
                     speed=s["speed"],
                     pitch=s["pitch"],
-                    output_path=file_path
+                    output_path=audio_task.file_path
                 )
+                logger.debug(f"[{guild_id}] 音声生成完了 ({audio_task.task_id})")
             except Exception as e:
-                logger.error(f"[{guild.id}] 音声生成に失敗しました: {e}")
+                logger.error(f"[{guild_id}] 音声生成に失敗しました ({audio_task.task_id}): {e}")
+                audio_task.is_failed = True
+                audio_task.is_ready.set()
                 return
 
             # ファイルが正常に生成されたか確認
-            if not os.path.exists(file_path):
-                logger.error(f"[{guild.id}] 音声ファイルが生成されませんでした: {file_path}")
-                return
+            if not os.path.exists(audio_task.file_path):
+                logger.error(f"[{guild_id}] 音声ファイルが生成されませんでした: {audio_task.file_path}")
+                audio_task.is_failed = True
 
-            # ボイスチャットに接続していない場合はスキップ
-            if not guild.voice_client:
-                logger.warning(f"[{guild.id}] VC未接続のため再生をスキップしました")
-                return
+            audio_task.is_ready.set()
 
-            # 再生処理
-            try:
-                source = discord.FFmpegPCMAudio(
-                    file_path,
-                    options="-vn -loglevel quiet",
-                    before_options="-loglevel quiet",
-                )
-                stop_event = asyncio.Event()
-
-                def after_callback(error):
-                    if error:
-                        logger.error(f"[{guild.id}] 再生中にエラーが発生しました: {error}")
-                    self.bot.loop.call_soon_threadsafe(stop_event.set)
-
-                guild.voice_client.play(source, after=after_callback)
-
-                # タイムアウト付きで待機（30秒）
+        except asyncio.CancelledError:
+            logger.warning(f"[{guild_id}] 音声生成タスクがキャンセルされました ({audio_task.task_id})")
+            audio_task.is_failed = True
+            audio_task.is_ready.set()
+            # キャンセル時もファイルがあれば削除
+            if os.path.exists(audio_task.file_path):
                 try:
-                    await asyncio.wait_for(stop_event.wait(), timeout=30.0)
-                    logger.info(f"[{guild.id}] 再生完了: {normalized_text[:15]}")
-                except asyncio.TimeoutError:
-                    logger.warning(f"[{guild.id}] 再生がタイムアウトしました")
-                    if guild.voice_client and guild.voice_client.is_playing():
-                        guild.voice_client.stop()
-
-            except discord.errors.ClientException as e:
-                logger.error(f"[{guild.id}] Discord再生エラー (ClientException): {e}")
-            except Exception as e:
-                logger.error(f"[{guild.id}] 再生処理中に予期しないエラーが発生しました: {e}")
-
+                    os.remove(audio_task.file_path)
+                except Exception:
+                    pass
+            raise
         except Exception as e:
-            logger.error(f"[{guild.id}] _process_and_play内で予期しないエラーが発生しました: {e}")
+            logger.error(f"[{guild_id}] 音声生成中に予期しないエラー ({audio_task.task_id}): {e}")
+            audio_task.is_failed = True
+            audio_task.is_ready.set()
+
+    async def enqueue_message(self, guild_id: int, text: str, author_id: int):
+        """メッセージをキューに追加し、音声生成を開始する"""
+        task_id = str(uuid.uuid4())
+        file_path = f"{self.temp_dir}/audio_{guild_id}_{task_id}.wav"
+
+        audio_task = AudioTask(
+            task_id=task_id,
+            text=text,
+            author_id=author_id,
+            file_path=file_path
+        )
+
+        # 音声生成タスクをバックグラウンドで開始
+        audio_task.generation_task = asyncio.create_task(
+            self._generate_audio(audio_task, guild_id)
+        )
+
+        # キューに追加
+        queue = self.get_queue(guild_id)
+        await queue.put(audio_task)
+
+        logger.debug(f"[{guild_id}] キューに追加 ({task_id}): {text[:20]}...")
+
+        # 再生処理が動いていなければ開始
+        if not self.is_processing[guild_id]:
+            asyncio.create_task(self.play_next(guild_id))
+
+    async def play_next(self, guild_id: int):
+        self.is_processing[guild_id] = True
+        queue = self.get_queue(guild_id)
+        guild = self.bot.get_guild(guild_id) or await self.bot.fetch_guild(guild_id)
+
+        try:
+            while not queue.empty():
+                audio_task: AudioTask = await queue.get()
+                try:
+                    await self._play_audio_task(guild, audio_task)
+                except Exception as e:
+                    logger.error(f"[{guild_id}] 再生中にエラーが発生しました: {e}")
+                finally:
+                    queue.task_done()
+                    # 一時ファイルのクリーンアップ
+                    await self._cleanup_audio_file(audio_task, guild_id)
         finally:
-            # 一時ファイルのクリーンアップ
+            self.is_processing[guild_id] = False
+
+    async def _play_audio_task(self, guild, audio_task: AudioTask):
+        """AudioTaskを再生する"""
+        guild_id = guild.id
+
+        # 音声生成の完了を待機（タイムアウト付き）
+        try:
+            await asyncio.wait_for(audio_task.is_ready.wait(), timeout=30.0)
+        except asyncio.TimeoutError:
+            logger.warning(f"[{guild_id}] 音声生成がタイムアウトしました ({audio_task.task_id})")
+            return
+
+        # 生成に失敗していた場合はスキップ
+        if audio_task.is_failed:
+            logger.warning(f"[{guild_id}] 音声生成が失敗したためスキップ ({audio_task.task_id})")
+            return
+
+        # ボイスチャットに接続していない場合はスキップ
+        if not guild.voice_client:
+            logger.warning(f"[{guild_id}] VC未接続のため再生をスキップしました ({audio_task.task_id})")
+            return
+
+        # 再生処理
+        try:
+            source = discord.FFmpegPCMAudio(
+                audio_task.file_path,
+                options="-vn -loglevel quiet",
+                before_options="-loglevel quiet",
+            )
+            stop_event = asyncio.Event()
+
+            def after_callback(error):
+                if error:
+                    logger.error(f"[{guild_id}] 再生中にエラーが発生しました: {error}")
+                self.bot.loop.call_soon_threadsafe(stop_event.set)
+
+            guild.voice_client.play(source, after=after_callback)
+
+            # タイムアウト付きで待機（30秒）
             try:
-                if os.path.exists(file_path):
-                    await asyncio.sleep(0.5)  # ファイルハンドルが確実に閉じられるまで待機
-                    os.remove(file_path)
-                    logger.debug(f"[{guild.id}] 一時ファイルを削除しました: {file_path}")
-            except Exception as e:
-                logger.warning(f"[{guild.id}] 一時ファイルの削除に失敗しました: {e}")
+                await asyncio.wait_for(stop_event.wait(), timeout=30.0)
+                logger.info(f"[{guild_id}] 再生完了 ({audio_task.task_id}): {audio_task.text[:15]}")
+            except asyncio.TimeoutError:
+                logger.warning(f"[{guild_id}] 再生がタイムアウトしました ({audio_task.task_id})")
+                if guild.voice_client and guild.voice_client.is_playing():
+                    guild.voice_client.stop()
+
+        except discord.errors.ClientException as e:
+            logger.error(f"[{guild_id}] Discord再生エラー (ClientException): {e}")
+        except Exception as e:
+            logger.error(f"[{guild_id}] 再生処理中に予期しないエラーが発生しました: {e}")
+
+    async def _cleanup_audio_file(self, audio_task: AudioTask, guild_id: int):
+        """音声ファイルを削除する"""
+        try:
+            if os.path.exists(audio_task.file_path):
+                await asyncio.sleep(0.5)  # ファイルハンドルが確実に閉じられるまで待機
+                os.remove(audio_task.file_path)
+                logger.debug(f"[{guild_id}] 一時ファイルを削除しました: {audio_task.file_path}")
+        except Exception as e:
+            logger.warning(f"[{guild_id}] 一時ファイルの削除に失敗しました: {e}")
 
     @commands.Cog.listener(name="on_voice_state_update")
     async def on_vc_notification(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
@@ -213,12 +291,7 @@ class Voice(commands.Cog):
 
             if content:
                 try:
-                    queue = self.get_queue(member.guild.id)
-                    # ユーザーのデフォルト設定（speakerなど）を使用するためmember.idを渡す
-                    await queue.put((content, member.id))
-
-                    if not self.is_processing[member.guild.id]:
-                        asyncio.create_task(self.play_next(member.guild.id))
+                    await self.enqueue_message(member.guild.id, content, member.id)
                 except Exception as e:
                     logger.error(f"[{member.guild.id}] VC通知のキューイングに失敗しました: {e}")
         except Exception as e:
@@ -282,11 +355,7 @@ class Voice(commands.Cog):
         if not content.strip():
             return
 
-        queue = self.get_queue(message.guild.id)
-        await queue.put((content, message.author.id))
-
-        if not self.is_processing[message.guild.id]:
-            asyncio.create_task(self.play_next(message.guild.id))
+        await self.enqueue_message(message.guild.id, content, message.author.id)
 
     @commands.Cog.listener(name="on_voice_state_update")
     async def clear_info_on_leave(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
@@ -295,11 +364,19 @@ class Voice(commands.Cog):
             guild_id = member.guild.id
             # データの掃除
             self.read_channels.pop(guild_id, None)
-            # キューを空にする
+            # キューを空にし、進行中の生成タスクをキャンセル
             if guild_id in self.queues:
                 while not self.queues[guild_id].empty():
                     try:
-                        self.queues[guild_id].get_nowait()
+                        audio_task: AudioTask = self.queues[guild_id].get_nowait()
+                        if audio_task.generation_task and not audio_task.generation_task.done():
+                            audio_task.generation_task.cancel()
+                        # ファイルも削除
+                        if os.path.exists(audio_task.file_path):
+                            try:
+                                os.remove(audio_task.file_path)
+                            except Exception:
+                                pass
                     except asyncio.QueueEmpty:
                         break
             logger.warning(f"[{guild_id}] VC切断を検知したため、キューをクリアしました。")
