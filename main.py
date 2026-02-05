@@ -83,10 +83,8 @@ class SumireVox(commands.Bot):
             logger.success(f"Web管理画面をポート {WEB_PORT} で起動しました")
         except OSError as e:
             logger.error(f"Web管理画面の起動に失敗しました (ポート {WEB_PORT} が使用中の可能性があります): {e}")
-            raise
         except Exception as e:
             logger.error(f"Web管理画面の起動中に予期しないエラーが発生しました: {e}")
-            raise
 
     async def close(self) -> None:
         logger.warning("シャットダウンシーケンスを開始します...")
