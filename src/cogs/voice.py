@@ -601,7 +601,9 @@ class Voice(commands.Cog):
 
     @app_commands.command(name="set_voice", description="自分の声をカスタマイズします")
     @app_commands.choices(speaker=[
-        app_commands.Choice(name="四国めたん (あまあま)", value=0),
+        app_commands.Choice(name="四国めたん (ノーマル)", value=2),
+        app_commands.Choice(name="四_国めたん (あまあま)", value=0),
+        app_commands.Choice(name="ずんだもん (ノーマル)", value=3),
         app_commands.Choice(name="ずんだもん (あまあま)", value=1),
         app_commands.Choice(name="春日部つむぎ", value=8),
         app_commands.Choice(name="雨晴はう", value=10),
@@ -613,6 +615,7 @@ class Voice(commands.Cog):
         app_commands.Choice(name="九州そら (あまあま)", value=15),
         app_commands.Choice(name="もち子さん", value=20),
         app_commands.Choice(name="剣崎雌雄", value=21),
+        app_commands.Choice(name="WhiteCUL", value=23),
         app_commands.Choice(name="後鬼", value=27),
         app_commands.Choice(name="No.7", value=29),
         app_commands.Choice(name="ちび式じい", value=42),
@@ -621,6 +624,8 @@ class Voice(commands.Cog):
         app_commands.Choice(name="ナースロボ＿タイプＴ", value=47),
         app_commands.Choice(name="聖騎士紅桜", value=50),
         app_commands.Choice(name="雀松朱司", value=52),
+        app_commands.Choice(name="中国うさぎ", value=61),
+        app_commands.Choice(name="春歌ナナ", value=54),
     ])
     @app_commands.rename(speaker="キャラクター", speed="スピード", pitch="ピッチ")
     @app_commands.describe(
