@@ -13,7 +13,6 @@ from rich import box
 
 from src.core.voicevox_client import VoicevoxClient
 from src.core.database import Database
-from src.web.web import app as web_app
 
 # ロガーのセットアップ
 logger = setup_logger()
@@ -31,7 +30,9 @@ QUIT_KEY: str = "q"
 WEB_PORT: int = int(os.getenv("WEB_PORT", 8080))
 VOICEVOX_HOST = os.getenv("VOICEVOX_HOST", "127.0.0.1")
 VOICEVOX_PORT = int(os.getenv("VOICEVOX_PORT", 50021))
-WEB_ENABLED: bool = bool(os.getenv("WEB_ENABLED", True))
+WEB_ENABLED: str = str(os.getenv("WEB_ENABLED", True))
+DEV_GUILD_ID: int = int(os.getenv("DEV_GUILD_ID", 0))
+COMMANDS_SYNC: str = str(os.getenv("COMMANDS_SYNC", True))
 
 COGS: list[str] = [
     "src.cogs.voice",
@@ -77,20 +78,26 @@ class SumireVox(commands.Bot):
             except Exception as e:
                 logger.error(f"{cog} の読み込みに失敗しました: {e}")
 
-        if WEB_ENABLED:
+        if COMMANDS_SYNC == "true":
             try:
-                config = uvicorn.Config(web_app, host="0.0.0.0", port=WEB_PORT, log_level="error", loop="asyncio")
-                server = uvicorn.Server(config)
-                self.web_task = asyncio.create_task(server.serve())
-                logger.success(f"Web管理画面をポート {WEB_PORT} で起動しました")
-            except OSError as e:
-                logger.error(f"Web管理画面の起動に失敗しました (ポート {WEB_PORT} が使用中の可能性があります): {e}")
-                raise
+                logger.info(f"コマンドを同期しています...")
+                synced = await self.tree.sync()
+                logger.success(f"{len(synced)}個のコマンドを同期しました")
             except Exception as e:
-                logger.error(f"Web管理画面の起動中に予期しないエラーが発生しました: {e}")
+                logger.error(f"コマンドの同期に失敗しました: {e}")
                 raise
         else:
-            logger.info("Web管理画面は無効化されています")
+            logger.warning("コマンドの同期は無効化されています")
+
+        if DEV_GUILD_ID != 0:
+            try:
+                logger.info(f"開発サーバー (ID: {DEV_GUILD_ID}) にコマンドを同期しています...")
+                dev_guild = discord.Object(id=DEV_GUILD_ID)
+                self.tree.copy_global_to(guild=dev_guild)
+                synced = await self.tree.sync(guild=dev_guild)
+                logger.success(f"{len(synced)}個のコマンドを開発サーバー (ID: {DEV_GUILD_ID}) に同期しました")
+            except Exception as e:
+                logger.error(f"開発サーバー (ID: {DEV_GUILD_ID}) のコマンド同期に失敗しました: {e}")
 
     async def close(self) -> None:
         logger.warning("シャットダウンシーケンスを開始します...")
@@ -107,13 +114,6 @@ class SumireVox(commands.Bot):
         except Exception as e:
             logger.error(f"データベース接続の終了に失敗: {e}")
 
-        try:
-            if self.web_task:
-                self.web_task.cancel()
-                logger.success(f"Web管理画面を終了しました")
-        except Exception as e:
-            logger.error(f"Web管理画面の終了に失敗: {e}")
-
         await super().close()
         logger.success("Discord セッションを終了しました")
 
@@ -124,8 +124,6 @@ class SumireVox(commands.Bot):
 
         vv_url = f"http://{VOICEVOX_HOST}:{VOICEVOX_PORT}"
         web_url = f"http://localhost:{WEB_PORT}"
-
-        admin_user = os.getenv("ADMIN_USER", "Not Configured")
 
         # 起動時のステータスをテーブルで表示
         table = Table(
@@ -160,4 +158,4 @@ if __name__ == "__main__":
         except Exception as e:
             logger.critical(f"Botの実行中に致命的なエラーが発生しました: {e}")
     else:
-        logger.error(".env ファイルに DISCORD_TOKEN が見つかりません。")
+        logger.error("DISCORD_TOKEN が見つかりません。")
