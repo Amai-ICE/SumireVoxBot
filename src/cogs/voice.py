@@ -320,7 +320,7 @@ class Voice(commands.Cog):
 
         # URLを省略
         if settings.skip_urls:
-            content = re.sub(r'https?://[\w/:%#$&?()~.=+\-]+', '、URL省略、', content)
+            content = re.sub(r'https?://[\w/:%#$&?()~.=+\-]+', '、ユーアールエル省略、', content)
 
         # サーバー絵文字の処理
         content = re.sub(r'<a?:(\w+):?\d+>', r'\1', content)
