@@ -40,7 +40,7 @@ cd SumireVox
 `.env.template` を `.env` にコピーし、必要な情報を記入してください。
 
 ```bash
-cp .env.template .env
+cp .env.template .env.bot1
 ```
 
 **主な設定項目:**
