@@ -9,7 +9,7 @@ import jaconv
 from loguru import logger
 import romkan2
 from dotenv import load_dotenv
-from src.utils.views import ConfigSearchView
+from src.utils.views import ConfigSearchView, DictionaryView
 import uuid
 from dataclasses import dataclass, field
 
@@ -660,166 +660,32 @@ class Voice(commands.Cog):
 
         return await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="add_word", description="単語を辞書に登録します")
-    @app_commands.describe(word="登録する単語", reading="読み方（カタカナのみ）")
-    async def add_word(self, interaction: discord.Interaction, word: str, reading: str):
-        # スペース削除と変換
-        word = word.strip()
-        reading = reading.strip()
-
-        try:
-            normalized_reading = jaconv.h2z(reading, kana=True, digit=False, ascii=False)
-            normalized_reading = jaconv.hira2kata(normalized_reading)
-        except Exception as e:
-            logger.error(f"[{interaction.guild.id}] 読み方の正規化に失敗しました: {e}")
-            embed = discord.Embed(
-                title="❌ 変換エラー",
-                description="読み方の変換中にエラーが発生しました。",
-                color=discord.Color.red()
-            )
-            return await interaction.response.send_message(
-                embed=embed,
-                ephemeral=True
-            )
-
-        # 最終チェック
-        if not is_katakana(normalized_reading):
-            embed = discord.Embed(
-                title="❌ 入力エラー",
-                description="読み方は「ひらがな」または「カタカナ」で入力してください。",
-                color=discord.Color.red()
-            )
-            return await interaction.response.send_message(
-                embed=embed,
-                ephemeral=True
-            )
-
-        if not word:
-            embed = discord.Embed(
-                title="❌ 入力エラー",
-                description="単語を入力してください。",
-                color=discord.Color.red()
-            )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
-
-        try:
-            # 既存の辞書を取得
-            words_dict = await self.bot.db.get_dict(interaction.guild.id)
-
-            # 辞書が存在しない場合は新規作成
-            if not words_dict or not isinstance(words_dict, dict):
-                words_dict = {}
-
-            # 新しい単語と読みを追加
-            words_dict[word] = normalized_reading
-
-            # 更新された辞書をDBに保存
-            await self.bot.db.add_or_update_dict(interaction.guild.id, words_dict)
-
-            logger.success(f"[{interaction.guild.id}] 辞書登録: {word} -> {normalized_reading}")
-            embed = discord.Embed(
-                title="🏠 サーバー辞書に登録しました",
-                description=f"`{word}` → `{normalized_reading}`",
-                color=discord.Color.green()
-            )
-            return await interaction.response.send_message(embed=embed)
-        except Exception as e:
-            logger.error(f"[{interaction.guild.id}] 辞書登録に失敗しました: {e}")
-            embed = discord.Embed(
-                title="❌ 辞書への登録に失敗しました",
-                description="辞書への登録中にエラーが発生しました。",
-                color=discord.Color.red()
-            )
-            return await interaction.response.send_message(
-                embed=embed,
-                ephemeral=True
-            )
-
-    @app_commands.command(name="remove_word", description="辞書から単語を削除します")
-    @app_commands.describe(word="削除する単語")
-    async def remove_word(self, interaction: discord.Interaction, word: str):
-        word = word.strip()
-        # DBから現在の辞書を取得
-        words_dict = await self._get_guild_dict(interaction)
-        if words_dict is None: return None
-
-        # 辞書が存在しない、または空の場合
-        if not words_dict or not isinstance(words_dict, dict):
-            embed = discord.Embed(
-                title="⚠️ 単語が見つかりません",
-                description=f"`{word}` は辞書に登録されていません。",
-                color=discord.Color.orange()
-            )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
-
-        # 削除する単語が辞書に存在するかチェック
-        if word not in words_dict:
-            embed = discord.Embed(
-                title="⚠️ 単語が見つかりません",
-                description=f"`{word}` は辞書に登録されていません。",
-                color=discord.Color.orange()
-            )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
-
-        # 辞書から単語を削除
-        try:
-            del words_dict[word]
-        except Exception as e:
-            logger.error(f"[{interaction.guild.id}] 辞書からの単語削除に失敗しました: {e}")
-            embed = discord.Embed(
-                title="❌ 辞書の更新エラー",
-                description="辞書の更新中にエラーが発生しました。",
-                color=discord.Color.red()
-            )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
-
-        # 更新された辞書をDBに保存
-        try:
-            success = await self.bot.db.add_or_update_dict(interaction.guild.id, words_dict)
-        except Exception as e:
-            logger.error(f"[{interaction.guild.id}] 辞書の保存に失敗しました: {e}")
-            embed = discord.Embed(
-                title="❌ 辞書の保存エラー",
-                description="辞書の保存中にエラーが発生しました。",
-                color=discord.Color.red()
-            )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
-
-        if success:
-            logger.success(f"[{interaction.guild.id}] 辞書削除: {word}")
-            embed = discord.Embed(
-                title="🗑️ 辞書から削除しました",
-                description=f"`{word}` を辞書から削除しました。",
-                color=discord.Color.green()
-            )
-            return await interaction.response.send_message(embed=embed)
-        else:
-            logger.warning(f"[{interaction.guild.id}] 辞書削除に失敗しました: {word}")
-            embed = discord.Embed(
-                title="⚠️ 削除失敗",
-                description="削除に失敗しました。",
-                color=discord.Color.orange()
-            )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
-
-    @app_commands.command(name="dictionary", description="辞書に登録されている単語一覧を表示します")
+    @app_commands.command(name="dictionary", description="辞書を管理します（表示・追加・削除）")
     async def dictionary(self, interaction: discord.Interaction):
-        guild_rows = await self._get_guild_dict(interaction)
-        if guild_rows is None: return
-
         try:
-            embed = discord.Embed(title="📖 辞書一覧", color=discord.Color.blue())
-            embed.add_field(name="🏠 サーバー辞書", value=format_rows(guild_rows), inline=False)
+            guild_rows = await self._get_guild_dict(interaction)
+            if guild_rows is None: return
 
-            await interaction.response.send_message(embed=embed)
+            embed = self.create_dictionary_embed(guild_rows)
+
+            view = DictionaryView(self.bot.db, self.bot)
+            await interaction.response.send_message(embed=embed, view=view)
+            view.message = await interaction.original_response()
         except Exception as e:
-            logger.error(f"辞書一覧の送信に失敗しました: {e}")
+            logger.error(f"辞書管理画面の表示に失敗しました: {e}")
             embed = discord.Embed(
                 title="❌ 辞書の表示エラー",
-                description="辞書一覧の表示中にエラーが発生しました。",
+                description="辞書管理画面の表示中にエラーが発生しました。",
                 color=discord.Color.red()
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    def create_dictionary_embed(self, guild_rows):
+        """辞書表示用Embedを生成する"""
+        embed = discord.Embed(title="📖 辞書管理", color=discord.Color.blue())
+        embed.add_field(name="🏠 サーバー辞書", value=format_rows(guild_rows), inline=False)
+        embed.set_footer(text="下のボタンから単語を追加・削除できます")
+        return embed
 
     @app_commands.command(name="config", description="サーバーごとの読み上げ設定を変更します")
     async def config(self, interaction: discord.Interaction):
