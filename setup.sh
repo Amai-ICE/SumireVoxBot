@@ -153,18 +153,6 @@ update_env_file() {
     sed -i "s/WEB_ENABLED=.*/WEB_ENABLED=false/" "$env_file"
 }
 
-backup_file() {
-    local file_path=$1
-
-    if [ -f "$file_path" ]; then
-        local backup_path="${file_path}.backup"
-        cp "$file_path" "$backup_path"
-        write_colored_output "⚠️  Backed up existing file to ${backup_path}" yellow
-        return 0
-    fi
-    return 1
-}
-
 # ========== メイン処理 ==========
 
 write_header
@@ -206,7 +194,6 @@ echo ""
 
 # Step 4: docker-compose.yml の生成
 write_colored_output "[Step 4/5] Generating docker-compose.yml..." yellow
-backup_file "docker-compose.yml" > /dev/null 2>&1
 
 new_docker_compose_file "$BOT_COUNT"
 write_colored_output "✓ docker-compose.yml generated with ${BOT_COUNT} bot(s)" green
@@ -217,9 +204,6 @@ write_colored_output "[Step 5/5] Creating .env files for bot instances..." yello
 
 for ((i = 1; i <= BOT_COUNT; i++)); do
     ENV_FILE=".env.bot${i}"
-
-    # バックアップ
-    backup_file "$ENV_FILE" > /dev/null 2>&1
 
     # .env.template からコピー
     cp ".env.template" "$ENV_FILE"

@@ -137,18 +137,6 @@ function Update-EnvFile {
     Set-Content -Path $EnvFilePath -Value $content
 }
 
-function Backup-File {
-    param([string]$FilePath)
-
-    if (Test-Path $FilePath) {
-        $backupPath = "$FilePath.backup"
-        Copy-Item $FilePath $backupPath -Force | Out-Null
-        Write-ColoredOutput "⚠️  Backed up existing file to $backupPath" -Color Yellow
-        return $true
-    }
-    return $false
-}
-
 # ========== メイン処理 ==========
 
 Write-Header
@@ -189,7 +177,6 @@ Write-Host ""
 
 # Step 4: docker-compose.yml の生成
 Write-ColoredOutput "[Step 4/5] Generating docker-compose.yml..." -Color Yellow
-Backup-File "docker-compose.yml" | Out-Null
 
 $dockerComposeContent = New-DockerComposeFile -BotCount $BotCount
 Set-Content -Path "docker-compose.yml" -Value $dockerComposeContent
@@ -201,9 +188,6 @@ Write-ColoredOutput "[Step 5/5] Creating .env files for bot instances..." -Color
 
 for ($i = 1; $i -le $BotCount; $i++) {
     $envFile = ".env.bot$i"
-
-    # バックアップ
-    Backup-File $envFile | Out-Null
 
     # .env.template からコピー
     Copy-Item ".env.template" $envFile -Force | Out-Null
