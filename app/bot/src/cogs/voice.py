@@ -13,8 +13,8 @@ from src.utils.views import ConfigSearchView, DictionaryView
 import uuid
 from dataclasses import dataclass, field
 
-
 AUTO_LEAVE_INTERVAL: int = 1
+DISCONNECT_CONFIRM_DELAY: int = 30
 
 
 def is_katakana(text: str) -> bool:
@@ -360,26 +360,99 @@ class Voice(commands.Cog):
     @commands.Cog.listener(name="on_voice_state_update")
     async def clear_info_on_leave(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
         """Bot自身がVCから切断されたら情報をクリアする"""
-        if member.id == self.bot.user.id and before.channel is not None and after.channel is None:
-            guild_id = member.guild.id
+
+        def _is_bot_disconnect() -> bool:
+            return (
+                    member.id == self.bot.user.id
+                    and before.channel is not None
+                    and after.channel is None
+            )
+
+        async def _cancel_generation_task(audio_task: AudioTask, guild_id: int) -> None:
+            task = audio_task.generation_task
+            if not task or task.done():
+                return
+
+            try:
+                task.cancel()
+                try:
+                    await asyncio.wait_for(task, timeout=2.0)
+                except (asyncio.CancelledError, asyncio.TimeoutError):
+                    pass
+            except Exception as e:
+                logger.error(f"[{guild_id}] タスクキャンセル中にエラーが発生しました: {e}")
+
+        def _delete_audio_file(audio_task: AudioTask, guild_id: int) -> None:
+            file_path = audio_task.file_path
+            if not file_path or not os.path.exists(file_path):
+                return
+
+            try:
+                os.remove(file_path)
+                logger.debug(f"[{guild_id}] 一時ファイルを削除しました: {file_path}")
+            except PermissionError as e:
+                logger.warning(f"[{guild_id}] ファイル削除の権限エラー: {e}")
+            except OSError as e:
+                logger.warning(f"[{guild_id}] ファイル削除中にOSエラーが発生しました: {e}")
+            except Exception as e:
+                logger.error(f"[{guild_id}] ファイル削除中に予期しないエラーが発生しました: {e}")
+
+        def _is_reconnected(guild_id: int) -> bool:
+            guild = self.bot.get_guild(guild_id)
+            vc = guild.voice_client if guild else None
+            return bool(vc and vc.is_connected())
+
+        async def _cleanup_queue(guild_id: int) -> None:
+            queue = self.queues.get(guild_id)
+            if not queue:
+                return
+
+            while True:
+                try:
+                    audio_task: AudioTask = queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    break
+                except Exception as e:
+                    logger.error(f"[{guild_id}] キューのクリーンアップ中にエラーが発生しました: {e}")
+                    continue
+
+                await _cancel_generation_task(audio_task, guild_id)
+                _delete_audio_file(audio_task, guild_id)
+
+            try:
+                del self.queues[guild_id]
+                self.is_processing.pop(guild_id, None)
+            except Exception as e:
+                logger.error(f"[{guild_id}] キューオブジェクトの削除中にエラーが発生しました: {e}")
+
+        if not _is_bot_disconnect():
+            return
+
+        guild_id = member.guild.id
+
+        try:
+            logger.info(f"[{guild_id}] VC切断を検知しました。{DISCONNECT_CONFIRM_DELAY}秒後に再確認します...")
+            await asyncio.sleep(DISCONNECT_CONFIRM_DELAY)
+
+            if _is_reconnected(guild_id):
+                logger.info(f"[{guild_id}] 再接続を確認しました。キャッシュのクリアをスキップします。")
+                return
+
+            logger.warning(f"[{guild_id}] VC切断を確認したため、キューをクリアします。")
+
             # データの掃除
             self.read_channels.pop(guild_id, None)
+
             # キューを空にし、進行中の生成タスクをキャンセル
-            if guild_id in self.queues:
-                while not self.queues[guild_id].empty():
-                    try:
-                        audio_task: AudioTask = self.queues[guild_id].get_nowait()
-                        if audio_task.generation_task and not audio_task.generation_task.done():
-                            audio_task.generation_task.cancel()
-                        # ファイルも削除
-                        if os.path.exists(audio_task.file_path):
-                            try:
-                                os.remove(audio_task.file_path)
-                            except Exception:
-                                pass
-                    except asyncio.QueueEmpty:
-                        break
+            await _cleanup_queue(guild_id)
+
             logger.warning(f"[{guild_id}] VC切断を検知したため、キューをクリアしました。")
+
+        except asyncio.CancelledError:
+            logger.warning(f"[{guild_id}] クリーンアップ処理がキャンセルされました")
+            raise
+        except Exception as e:
+            logger.error(f"[{guild_id}] VC切断時のクリーンアップ中に予期しないエラーが発生しました: {e}")
 
     @commands.Cog.listener(name="on_voice_state_update")
     async def auto_join(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
