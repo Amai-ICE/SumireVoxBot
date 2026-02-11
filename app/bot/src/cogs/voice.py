@@ -309,6 +309,73 @@ class Voice(commands.Cog):
         settings = await self.bot.db.get_guild_settings(message.guild.id)
         content = message.clean_content
 
+        def _format_discord_timestamp_for_tts(match: re.Match) -> str:
+            try:
+                unix = int(match.group("unix"))
+            except Exception:
+                return match.group(0)
+
+            fmt = match.group("fmt") or "f"
+
+            # Python標準のみで完結（外部依存なし）
+            from datetime import datetime, timezone
+
+            dt = datetime.fromtimestamp(unix, tz=timezone.utc)
+            now = datetime.now(timezone.utc)
+
+            def _relative_jp(target: datetime, base: datetime) -> str:
+                delta_sec = int((target - base).total_seconds())
+                future = delta_sec > 0
+                sec = abs(delta_sec)
+
+                # 粒度をざっくり（TTS向けに自然さ優先）
+                if sec < 60:
+                    n, unit = sec, "秒"
+                elif sec < 3600:
+                    n, unit = sec // 60, "分"
+                elif sec < 86400:
+                    n, unit = sec // 3600, "時間"
+                elif sec < 86400 * 30:
+                    n, unit = sec // 86400, "日"
+                elif sec < 86400 * 365:
+                    n, unit = sec // (86400 * 30), "か月"
+                else:
+                    n, unit = sec // (86400 * 365), "年"
+
+                if n <= 0:
+                    n = 1
+
+                return f"{n}{unit}{'後' if future else '前'}"
+
+            # :R は相対表現、それ以外は日時として読む
+            if fmt == "R":
+                return _relative_jp(dt, now)
+
+            # ローカル時刻で読み上げ（一般的に自然）
+            local_dt = dt.astimezone()
+
+            if fmt == "t":  # 16:20
+                return f"{local_dt.hour}時{local_dt.minute}分"
+            if fmt == "T":  # 16:20:30
+                return f"{local_dt.hour}時{local_dt.minute}分{local_dt.second}秒"
+            if fmt == "d":  # 20/04/2021
+                return f"{local_dt.year}年{local_dt.month}月{local_dt.day}日"
+            if fmt == "D":  # April 20, 2021
+                return f"{local_dt.year}年{local_dt.month}月{local_dt.day}日"
+            if fmt == "f":  # April 20, 2021 16:20
+                return f"{local_dt.year}年{local_dt.month}月{local_dt.day}日{local_dt.hour}時{local_dt.minute}分"
+            if fmt == "F":  # Tuesday, April 20, 2021 16:20
+                return f"{local_dt.year}年{local_dt.month}月{local_dt.day}日{local_dt.hour}時{local_dt.minute}分"
+
+            # 不明フォーマットはデフォルト扱い
+            return f"{local_dt.year}年{local_dt.month}月{local_dt.day}日{local_dt.hour}時{local_dt.minute}分"
+
+        content = re.sub(
+            r"<t:(?P<unix>\d+)(?::(?P<fmt>[tTdDfFR]))?>",
+            _format_discord_timestamp_for_tts,
+            content
+        )
+
         # メンション読み上げ
         if settings.read_mention:
             for mention in message.mentions:
@@ -320,14 +387,14 @@ class Voice(commands.Cog):
 
         # URLを省略
         if settings.skip_urls:
-            content = re.sub(r'https?://[\w/:%#$&?()~.=+\-]+', '、ユーアールエル省略、', content)
+            content = re.sub(r"https?://[\w/:%#$&?()~.=+\-]+", "、ユーアールエル省略、", content)
 
         # サーバー絵文字の処理
-        content = re.sub(r'<a?:(\w+):?\d+>', r'\1', content)
+        content = re.sub(r"<a?:(\w+):?\d+>", r"\1", content)
 
         # 絵文字の読み上げ
         if settings.read_emoji:
-            content = emoji.demojize(content, language='ja')
+            content = emoji.demojize(content, language="ja")
             content = content.replace(":", "、")
         else:
             content = emoji.replace_emoji(content, "")
